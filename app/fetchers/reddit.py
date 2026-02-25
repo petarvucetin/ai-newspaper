@@ -63,6 +63,17 @@ async def fetch_reddit() -> list[RawArticle]:
                 if not post_id or not title:
                     continue
 
+                # Skip pure media posts (images, videos) — no useful text content
+                post_url = post.get("url", "")
+                post_hint = post.get("post_hint", "")
+                if post_hint == "image" or post.get("is_video") or any(
+                    post_url.startswith(p) for p in (
+                        "https://i.redd.it/", "https://v.redd.it/",
+                        "https://preview.redd.it/", "https://www.reddit.com/media",
+                    )
+                ):
+                    continue
+
                 created_utc = post.get("created_utc")
                 permalink = f"https://www.reddit.com{post.get('permalink', '')}"
                 raw_posts.append({
