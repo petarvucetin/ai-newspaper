@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — AI News Tracker{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+  <h2 class="admin-heading">Admin Dashboard</h2>
+
+  <!-- Fetch Now -->
+  <section class="admin-section">
+    <h3>Manual Fetch</h3>
+    <form method="post" action="/admin/fetch-now">
+      <button type="submit" class="btn btn-primary">Fetch Now</button>
+    </form>
+  </section>
+
+  <!-- YouTube Channels -->
+  <section class="admin-section">
+    <h3>YouTube Channels</h3>
+    <p class="admin-hint">Pinned channels are fetched directly. Discovered channels appear here after keyword searches — pin them to subscribe.</p>
+    {% if channels %}
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Channel</th>
+          <th>Status</th>
+          <th>Weight</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ch in channels %}
+        <tr>
+          <td>
+            <a href="https://www.youtube.com/{{ ch.identifier }}" target="_blank" rel="noopener">
+              {{ ch.name }}
+            </a>
+            <span class="channel-id">{{ ch.identifier }}</span>
+          </td>
+          <td>
+            {% if ch.enabled %}
+            <span class="status-pill pinned">Pinned</span>
+            {% else %}
+            <span class="status-pill discovered">Discovered</span>
+            {% endif %}
+          </td>
+          <td>
+            <form method="post" action="/admin/source/{{ ch.id }}/weight" class="inline-form">
+              <input type="number" name="weight" value="{{ '%.2f'|format(ch.weight) }}"
+                     min="0.1" max="3.0" step="0.05" class="weight-input">
+              <button type="submit" class="btn btn-sm">Save</button>
+            </form>
+          </td>
+          <td class="action-cell">
+            {% if ch.enabled %}
+            <form method="post" action="/admin/channel/{{ ch.id }}/unpin" class="inline-form">
+              <button type="submit" class="btn btn-sm btn-secondary">Unpin</button>
+            </form>
+            {% else %}
+            <form method="post" action="/admin/channel/{{ ch.id }}/pin" class="inline-form">
+              <button type="submit" class="btn btn-sm btn-accent">Pin</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/admin/channel/{{ ch.id }}/delete" class="inline-form"
+                  onsubmit="return confirm('Remove {{ ch.name }} from the list?')">
+              <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="admin-empty">No channels yet. Run a fetch to discover channels via keyword search.</p>
+    {% endif %}
+  </section>
+
+  <!-- Source Weights -->
+  <section class="admin-section">
+    <h3>Source Weights</h3>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Type</th>
+          <th>Weight</th>
+          <th>Enabled</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for src in sources %}
+        <tr>
+          <td>{{ src.name }}</td>
+          <td><span class="source-badge source-{{ src.source_type }}">{{ src.source_type }}</span></td>
+          <td>
+            <form method="post" action="/admin/source/{{ src.id }}/weight" class="inline-form">
+              <input type="number" name="weight" value="{{ '%.2f'|format(src.weight) }}"
+                     min="0.1" max="3.0" step="0.05" class="weight-input">
+              <button type="submit" class="btn btn-sm">Save</button>
+            </form>
+          </td>
+          <td>
+            <span class="status-dot {% if src.enabled %}on{% else %}off{% endif %}"></span>
+            {{ 'Yes' if src.enabled else 'No' }}
+          </td>
+          <td>
+            <form method="post" action="/admin/source/{{ src.id }}/toggle" class="inline-form">
+              <button type="submit" class="btn btn-sm btn-secondary">
+                {{ 'Disable' if src.enabled else 'Enable' }}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Keyword Weights -->
+  <section class="admin-section">
+    <h3>Keyword Weights</h3>
+    <table class="admin-table">
+      <thead>
+        <tr>
+          <th>Keyword</th>
+          <th>Weight</th>
+          <th>Hits</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for kw in keywords %}
+        <tr>
+          <td><code>{{ kw.keyword }}</code></td>
+          <td>
+            <form method="post" action="/admin/keyword/{{ kw.id }}/weight" class="inline-form">
+              <input type="number" name="weight" value="{{ '%.3f'|format(kw.weight) }}"
+                     min="0.1" max="5.0" step="0.025" class="weight-input">
+              <button type="submit" class="btn btn-sm">Save</button>
+            </form>
+          </td>
+          <td>{{ kw.hits }}</td>
+          <td></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

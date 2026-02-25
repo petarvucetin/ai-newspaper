@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AI News Tracker{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <div class="masthead-meta">
+        <span class="edition">Daily Edition</span>
+        <span class="date" id="current-date"></span>
+      </div>
+      <h1 class="paper-title">The AI Intelligence</h1>
+      <div class="masthead-links">
+        <a href="/admin">Admin</a>
+      </div>
+    </div>
+    <nav class="filter-nav">
+      <a href="/?source=all" class="filter-btn {% if active_filter == 'all' %}active{% endif %}">All Sources</a>
+      <a href="/?source=reddit" class="filter-btn {% if active_filter == 'reddit' %}active{% endif %}">Reddit</a>
+      <a href="/?source=youtube" class="filter-btn {% if active_filter == 'youtube' %}active{% endif %}">YouTube</a>
+      <a href="/?source=hackernews" class="filter-btn {% if active_filter == 'hackernews' %}active{% endif %}">Hacker News</a>
+    </nav>
+  </header>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <p>AI News Tracker &mdash; Relevancy-ranked daily digest</p>
+  </footer>
+
+  {% block scripts %}{% endblock %}
+  <script>
+    document.getElementById('current-date').textContent = new Date().toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+  </script>
+</body>
+</html>

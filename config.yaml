@@ -1,0 +1,78 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+schedule:
+  fetch_time: "07:00"  # Daily fetch time (HH:MM, local time)
+
+admin:
+  username: "admin"
+  password: "changeme"  # Change this!
+
+sources:
+  reddit:
+    subreddits:
+      - r/ClaudeAI
+      - r/artificial
+      - r/MachineLearning
+      - r/LocalLLaMA
+      - r/ChatGPT
+      - r/programming
+    post_limit: 25
+    time_filter: "day"  # hour, day, week, month, year, all
+
+  youtube:
+    # Pinned channels — fetched directly regardless of keywords
+    channels:
+      - "@AnthropicAI"
+      - "@code4AI"
+      - "@AIExplained-official"
+    channel_video_limit: 5      # Latest N videos to fetch per channel
+    channel_days_back: 7        # How many days back to look for channel videos
+
+    # Keyword search — for discovering new channels and trending content
+    keywords:
+      - "claude code tutorial"
+      - "anthropic claude"
+      - "claude mcp"
+    max_results: 10
+    published_after_days: 2  # Only fetch videos published in last N days
+
+  hackernews:
+    keywords:
+      - "claude code"
+      - "anthropic"
+      - "claude mcp"
+    hits_per_page: 20
+    days_back: 2
+
+keyword_weights:
+  "claude code": 3.0
+  "mcp": 2.5
+  "anthropic": 2.0
+  "claude": 1.5
+  "agentic": 2.0
+  "llm": 1.2
+  "ai": 0.8
+  "machine learning": 1.0
+  "openai": 1.0
+  "gpt": 1.0
+  "gemini": 0.8
+  "local llm": 1.5
+  "fine tuning": 1.2
+  "rag": 1.5
+  "agent": 1.8
+
+scoring:
+  keyword_score_cap: 10.0
+  recency_multipliers:
+    under_24h: 1.5
+    under_48h: 1.2
+    older: 1.0
+  feedback:
+    source_weight_delta: 0.05
+    keyword_weight_delta: 0.025
+    source_weight_min: 0.1
+    source_weight_max: 3.0
+    keyword_weight_min: 0.1
+    keyword_weight_max: 5.0
