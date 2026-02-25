@@ -1,11 +1,12 @@
 """
-Fetch YouTube transcript via youtube-transcript-api and summarize with Claude Haiku.
+Fetch YouTube transcript via yt-dlp and summarize with Claude Haiku.
 Called for each YouTube article during the fetch pipeline.
 """
 import asyncio
 import logging
 import os
-import time
+import re
+import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -27,62 +28,66 @@ def _cookies_file() -> str | None:
 _TRANSCRIPT_CHAR_LIMIT = 8_000
 
 
+def _parse_vtt(vtt: str) -> str:
+    """Extract plain text from a WebVTT subtitle file, deduplicating rolling captions."""
+    seen: set[str] = set()
+    lines: list[str] = []
+    for line in vtt.splitlines():
+        line = line.strip()
+        # Skip header, timing cues, and empty lines
+        if not line or line.startswith("WEBVTT") or line.startswith("Kind:") \
+                or line.startswith("Language:") or "-->" in line \
+                or re.match(r"^\d+$", line):
+            continue
+        # Strip VTT inline tags: <00:00:01.234>, <c>, </c>, <b>, etc.
+        line = re.sub(r"<[^>]+>", "", line).strip()
+        if line and line not in seen:
+            seen.add(line)
+            lines.append(line)
+    text = " ".join(lines)
+    return re.sub(r" {2,}", " ", text).strip()
+
+
 def _get_transcript_sync(video_id: str) -> str:
-    """Fetch auto-generated captions via youtube-transcript-api. Returns plain text or ''."""
-    from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api._errors import (
-        NoTranscriptFound, TranscriptsDisabled, VideoUnavailable
-    )
+    """Fetch auto-generated captions via yt-dlp. Returns plain text or ''."""
+    import yt_dlp
 
-    cookies_path = _cookies_file()
-    if cookies_path:
-        import requests
-        from http.cookiejar import MozillaCookieJar
-        session = requests.Session()
-        jar = MozillaCookieJar(cookies_path)
-        jar.load(ignore_discard=True, ignore_expires=True)
-        session.cookies = jar
-        api = YouTubeTranscriptApi(http_client=session)
-        logger.debug("Using cookies file for transcript fetch")
-    else:
-        api = YouTubeTranscriptApi()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "writesubtitles": True,
+            "writeautomaticsub": True,
+            "subtitleslangs": ["en", "en-US", "en-GB"],
+            "subtitlesformat": "vtt",
+            "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
+            "ignoreerrors": True,
+        }
+        cookies = _cookies_file()
+        if cookies:
+            ydl_opts["cookiefile"] = cookies
+            logger.debug("Using cookies file for transcript fetch")
 
-    try:
-        # Try English first; fall back to any available language
         try:
-            transcript = api.fetch(video_id, languages=["en", "en-US", "en-GB"])
-        except NoTranscriptFound:
-            listing = api.list(video_id)
-            # Take first available transcript (auto-generated preferred)
-            for t in listing:
-                if t.is_generated:
-                    transcript = t.fetch()
-                    break
-            else:
-                for t in listing:
-                    transcript = t.fetch()
-                    break
-                else:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        except Exception as e:
+            logger.debug("yt-dlp download error for %s: %s", video_id, e)
+            return ""
+
+        # Find any .vtt file written to tmpdir
+        for fname in os.listdir(tmpdir):
+            if fname.endswith(".vtt"):
+                try:
+                    vtt = Path(tmpdir, fname).read_text(encoding="utf-8", errors="ignore")
+                    return _parse_vtt(vtt)
+                except Exception as e:
+                    logger.debug("VTT parse error for %s: %s", video_id, e)
                     return ""
 
-        snippets = list(transcript)
-        text = " ".join(s.text for s in snippets)
-        # Clean up common artifacts
-        text = text.replace("\n", " ").replace("[Music]", "").replace("[Applause]", "")
-        # Collapse extra spaces
-        import re
-        text = re.sub(r" {2,}", " ", text).strip()
-        return text
-
-    except (TranscriptsDisabled, VideoUnavailable) as e:
-        logger.debug("No transcript for %s: %s", video_id, e)
-        return ""
-    except Exception as e:
-        # Re-raise IP/request blocks so callers can retry
-        if type(e).__name__ in ("IpBlocked", "RequestBlocked"):
-            raise
-        logger.debug("Transcript fetch failed for %s: %s", video_id, e)
-        return ""
+    logger.debug("No subtitles found for %s", video_id)
+    return ""
 
 
 async def get_transcript(video_id: str) -> str:
