@@ -480,6 +480,36 @@ main { padding: 1rem 1.5rem; }
   max-width: 150px;
 }
 
+.cookies-alert {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 3px;
+  margin-bottom: 0.75rem;
+}
+.cookies-alert-ok      { background: #d1e7dd; color: #0a4a26; }
+.cookies-alert-warn    { background: #fff3cd; color: #664d03; }
+.cookies-alert-danger  { background: #f8d7da; color: #58151c; }
+
+.cookies-howto {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+.cookies-howto summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+.cookies-steps {
+  margin: 0.4rem 0 0.4rem 1.2rem;
+  line-height: 1.7;
+}
+.cookies-file-input {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+}
+
 .admin-msg {
   background: #d1e7dd;
   color: #0a4a26;

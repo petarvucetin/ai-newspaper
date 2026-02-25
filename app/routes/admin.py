@@ -1,5 +1,6 @@
 import secrets
-from fastapi import APIRouter, Request, Form, Depends, HTTPException
+from datetime import datetime, timezone
+from fastapi import APIRouter, Request, Form, Depends, HTTPException, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -10,6 +11,21 @@ from app.database import (
     add_youtube_channel, add_reddit_subreddit, db_conn, get_setting, set_setting,
     add_keyword_weight, delete_keyword_weight, add_source, delete_source,
 )
+
+_COOKIES_PATH = Path(__file__).parent.parent.parent / "youtube_cookies.txt"
+
+
+def _cookies_status() -> dict:
+    """Return info about the YouTube cookies file."""
+    if not _COOKIES_PATH.exists() or _COOKIES_PATH.stat().st_size == 0:
+        return {"exists": False, "age_days": None, "warning": True}
+    mtime = datetime.fromtimestamp(_COOKIES_PATH.stat().st_mtime, tz=timezone.utc)
+    age_days = (datetime.now(timezone.utc) - mtime).days
+    return {
+        "exists": True,
+        "age_days": age_days,
+        "warning": age_days >= 7,
+    }
 
 
 def _last_fetched() -> str | None:
@@ -59,6 +75,7 @@ async def admin_get(request: Request, _: str = Depends(require_admin), msg: str 
             "last_fetched": _last_fetched(),
             "schedule_time": schedule_time,
             "auto_enabled": auto_enabled,
+            "cookies_status": _cookies_status(),
         },
     )
 
@@ -199,6 +216,25 @@ async def add_source_route(
 async def delete_source_route(source_id: int, _: str = Depends(require_admin)):
     delete_source(source_id)
     return RedirectResponse("/admin", status_code=303)
+
+
+@router.post("/admin/cookies/upload")
+async def upload_cookies(
+    cookies_file: UploadFile = File(...),
+    _: str = Depends(require_admin),
+):
+    content = await cookies_file.read()
+    if not content.strip():
+        return RedirectResponse("/admin?msg=Cookies+file+is+empty", status_code=303)
+    _COOKIES_PATH.write_bytes(content)
+    return RedirectResponse("/admin?msg=YouTube+cookies+updated+successfully", status_code=303)
+
+
+@router.post("/admin/cookies/delete")
+async def delete_cookies(_: str = Depends(require_admin)):
+    if _COOKIES_PATH.exists():
+        _COOKIES_PATH.unlink()
+    return RedirectResponse("/admin?msg=YouTube+cookies+removed", status_code=303)
 
 
 @router.post("/admin/fetch-now")

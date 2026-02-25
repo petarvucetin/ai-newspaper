@@ -31,6 +31,50 @@
   <div class="admin-msg">{{ msg }}</div>
   {% endif %}
 
+  <!-- YouTube Cookies -->
+  <section class="admin-section">
+    <h3>YouTube Cookies</h3>
+    {% set cs = cookies_status %}
+    {% if not cs.exists %}
+    <div class="cookies-alert cookies-alert-danger">
+      <strong>No cookies file found.</strong> YouTube will block transcript and video fetches.
+    </div>
+    {% elif cs.warning %}
+    <div class="cookies-alert cookies-alert-warn">
+      <strong>Cookies are {{ cs.age_days }} days old</strong> and may have expired. YouTube typically invalidates cookies within 1–2 weeks.
+    </div>
+    {% else %}
+    <div class="cookies-alert cookies-alert-ok">
+      Cookies file present &mdash; {{ cs.age_days }} day{{ 's' if cs.age_days != 1 else '' }} old. Refresh if you see bot-detection errors.
+    </div>
+    {% endif %}
+
+    <details class="cookies-howto" {% if not cs.exists or cs.warning %}open{% endif %}>
+      <summary>How to export fresh YouTube cookies</summary>
+      <ol class="cookies-steps">
+        <li>Install the <strong>cookies.txt</strong> browser extension:
+          <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank" rel="noopener">Chrome</a> &middot;
+          <a href="https://addons.mozilla.org/firefox/addon/cookies-txt/" target="_blank" rel="noopener">Firefox</a>
+        </li>
+        <li>Open <a href="https://www.youtube.com" target="_blank" rel="noopener">youtube.com</a> and <strong>sign in</strong> to your Google account.</li>
+        <li>Click the extension icon and choose <em>Export</em> &rarr; <em>Current site</em> &rarr; save as <code>youtube_cookies.txt</code>.</li>
+        <li>Upload the file below.</li>
+      </ol>
+      <p class="admin-hint">Cookies expire after roughly 1–2 weeks. You do not need to use your main account — a throwaway Google account works fine.</p>
+    </details>
+
+    <form method="post" action="/admin/cookies/upload" enctype="multipart/form-data" class="add-form" style="margin-top:0.75rem">
+      <input type="file" name="cookies_file" accept=".txt,text/plain" required class="cookies-file-input">
+      <button type="submit" class="btn btn-sm btn-accent">Upload Cookies</button>
+    </form>
+    {% if cs.exists %}
+    <form method="post" action="/admin/cookies/delete" class="inline-form" style="margin-top:0.5rem"
+          onsubmit="return confirm('Remove the cookies file?')">
+      <button type="submit" class="btn btn-sm btn-danger">Remove Cookies</button>
+    </form>
+    {% endif %}
+  </section>
+
   <!-- YouTube Channels -->
   <section class="admin-section">
     <h3>YouTube Channels</h3>
