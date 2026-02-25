@@ -39,12 +39,11 @@
     const lastFetched = {{ (last_fetched[:16] | tojson) if (last_fetched is defined and last_fetched) else 'null' }};
     const dateEl = document.getElementById('current-date');
     if (lastFetched) {
-      // Parse "YYYY-MM-DD HH:MM" and format as "Monday, February 25, 2026 07:00"
-      const [datePart, timePart] = lastFetched.split(' ');
-      const [y, m, d] = datePart.split('-').map(Number);
-      const dt = new Date(y, m - 1, d);
+      // lastFetched is UTC "YYYY-MM-DD HH:MM" — append Z so Date parses it as UTC
+      const dt = new Date(lastFetched.replace(' ', 'T') + ':00Z');
       const longDate = dt.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-      dateEl.textContent = longDate + ' ' + timePart;
+      const time = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      dateEl.textContent = longDate + ' ' + time;
     } else {
       dateEl.textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     }

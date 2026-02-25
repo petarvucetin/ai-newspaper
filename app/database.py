@@ -1,9 +1,10 @@
+import os
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 from typing import Generator
 
-DB_PATH = Path(__file__).parent.parent / "data" / "news.db"
+DB_PATH = Path(os.environ.get("NEWS_DB_PATH", str(Path(__file__).parent.parent / "data" / "news.db")))
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -235,7 +236,13 @@ def get_articles(limit: int = 100, source_type: str | None = None) -> list[sqlit
                           (SELECT score FROM ratings WHERE article_id = a.id ORDER BY rated_at DESC LIMIT 1) AS user_rating
                    FROM articles a JOIN sources s ON a.source_id = s.id
                    WHERE COALESCE(a.dismissed, 0) = 0
-                   ORDER BY a.display_score DESC, a.fetched_at DESC LIMIT ?""",
+                   ORDER BY
+                     CASE WHEN s.source_type IN ('youtube', 'youtube_channel')
+                          THEN a.upvotes ELSE 0 END DESC,
+                     CASE WHEN s.source_type NOT IN ('youtube', 'youtube_channel')
+                          THEN a.display_score ELSE 0 END DESC,
+                     a.fetched_at DESC
+                   LIMIT ?""",
                 (limit,),
             ).fetchall()
     return rows
