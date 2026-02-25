@@ -162,11 +162,32 @@ def setup_scheduler(app):
     """Wire APScheduler into FastAPI lifespan."""
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from app import config
+    from app.database import get_setting
 
-    fetch_time = config.get("schedule.fetch_time", "07:00")
+    default_time = config.get("schedule.fetch_time", "07:00")
+    fetch_time = get_setting("schedule.fetch_time", default_time)
+    auto_enabled = get_setting("schedule.auto_enabled", "1") == "1"
     hour, minute = map(int, fetch_time.split(":"))
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(run_fetch, "cron", hour=hour, minute=minute, id="daily_fetch")
+    job = scheduler.add_job(run_fetch, "cron", hour=hour, minute=minute, id="daily_fetch")
+    if not auto_enabled:
+        job.pause()
     app.state.scheduler = scheduler
     return scheduler
+
+
+def reschedule(app, fetch_time: str, enabled: bool) -> None:
+    """Update the daily fetch job time and enabled state at runtime."""
+    from app.database import set_setting
+    set_setting("schedule.fetch_time", fetch_time)
+    set_setting("schedule.auto_enabled", "1" if enabled else "0")
+
+    scheduler = app.state.scheduler
+    hour, minute = map(int, fetch_time.split(":"))
+    scheduler.reschedule_job("daily_fetch", trigger="cron", hour=hour, minute=minute)
+    job = scheduler.get_job("daily_fetch")
+    if enabled:
+        job.resume()
+    else:
+        job.pause()

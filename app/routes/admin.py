@@ -7,7 +7,7 @@ from pathlib import Path
 from app import config
 from app.database import (
     get_sources, get_keyword_weights, get_youtube_channels, get_reddit_sources,
-    add_youtube_channel, add_reddit_subreddit, db_conn,
+    add_youtube_channel, add_reddit_subreddit, db_conn, get_setting, set_setting,
 )
 
 
@@ -42,6 +42,10 @@ async def admin_get(request: Request, _: str = Depends(require_admin), msg: str 
     channels = get_youtube_channels()
     reddit_sources = get_reddit_sources()
     keywords = get_keyword_weights()
+    from app import config
+    default_time = config.get("schedule.fetch_time", "07:00")
+    schedule_time = get_setting("schedule.fetch_time", default_time)
+    auto_enabled = get_setting("schedule.auto_enabled", "1") == "1"
     return templates.TemplateResponse(
         "admin.html",
         {
@@ -52,6 +56,8 @@ async def admin_get(request: Request, _: str = Depends(require_admin), msg: str 
             "keywords": keywords,
             "msg": msg,
             "last_fetched": _last_fetched(),
+            "schedule_time": schedule_time,
+            "auto_enabled": auto_enabled,
         },
     )
 
@@ -111,6 +117,20 @@ async def delete_channel(source_id: int, _: str = Depends(require_admin)):
     with db_conn() as con:
         con.execute("DELETE FROM sources WHERE id = ? AND source_type = 'youtube_channel'", (source_id,))
     return RedirectResponse("/admin", status_code=303)
+
+
+@router.post("/admin/schedule")
+async def update_schedule(
+    request: Request,
+    fetch_time: str = Form(...),
+    auto_enabled: str = Form(default="0"),
+    _: str = Depends(require_admin),
+):
+    from app.scheduler import reschedule
+    enabled = auto_enabled == "1"
+    reschedule(request.app, fetch_time, enabled)
+    status = "enabled" if enabled else "disabled"
+    return RedirectResponse(f"/admin?msg=Schedule+updated+to+{fetch_time}+({status})", status_code=303)
 
 
 @router.post("/admin/channel/add")

@@ -6,17 +6,25 @@
 <div class="admin-page">
   <h2 class="admin-heading">Admin Dashboard</h2>
 
-  <!-- Fetch Now -->
+  <!-- Fetch -->
   <section class="admin-section" id="fetch-section">
-    <h3>Manual Fetch</h3>
+    <h3>Fetch</h3>
     <div class="fetch-controls">
       <button class="btn btn-primary" id="fetch-btn" onclick="startFetch()">Fetch Now</button>
       <span class="fetch-status-badge" id="fetch-badge"></span>
     </div>
     <div class="fetch-progress" id="fetch-progress" style="display:none">
       <div class="fetch-log" id="fetch-log"></div>
-      <div class="fetch-summary" id="fetch-summary"></div>
     </div>
+    <form method="post" action="/admin/schedule" class="schedule-form">
+      <label class="schedule-label">
+        <input type="checkbox" name="auto_enabled" value="1" {% if auto_enabled %}checked{% endif %}>
+        Auto-fetch daily at
+      </label>
+      <input type="time" name="fetch_time" value="{{ schedule_time }}" class="time-input" required>
+      <button type="submit" class="btn btn-sm">Save Schedule</button>
+      <span class="schedule-hint">{% if auto_enabled %}Enabled{% else %}Disabled{% endif %}</span>
+    </form>
   </section>
 
   {% if msg %}

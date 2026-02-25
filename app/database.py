@@ -51,6 +51,11 @@ CREATE TABLE IF NOT EXISTS keyword_weights (
     hits INTEGER DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_articles_display_score ON articles(display_score DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_fetched_at ON articles(fetched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_source_id ON articles(source_id);
@@ -264,6 +269,17 @@ def get_sources() -> list[sqlite3.Row]:
 def get_keyword_weights() -> list[sqlite3.Row]:
     with db_conn() as con:
         return con.execute("SELECT * FROM keyword_weights ORDER BY weight DESC, keyword").fetchall()
+
+
+def get_setting(key: str, default: str = "") -> str:
+    with db_conn() as con:
+        row = con.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    with db_conn() as con:
+        con.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
 
 
 def get_recent_reddit_titles(days: int = 3) -> list[str]:

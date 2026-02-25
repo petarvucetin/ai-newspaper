@@ -484,6 +484,37 @@ main { padding: 1rem 1.5rem; }
 /* Fetch progress */
 .fetch-controls { display: flex; align-items: center; gap: 1rem; }
 
+.schedule-form {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.schedule-label {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.time-input {
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--rule);
+  background: var(--cream);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+}
+
+.schedule-hint {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
 .fetch-status-badge {
   font-family: var(--font-sans);
   font-size: 0.8rem;

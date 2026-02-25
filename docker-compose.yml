@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8001:8000"
+    volumes:
+      # Persist SQLite database
+      - ./data:/app/data
+      # Mount config so you can edit without rebuilding
+      - ./config.yaml:/app/config.yaml:ro
+    env_file:
+      - .env
+    restart: unless-stopped

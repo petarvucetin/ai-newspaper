@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+data/
+*.db
+.git/
+.gitignore
+*.md
+scripts/start.sh
+youtube_cookies.txt
