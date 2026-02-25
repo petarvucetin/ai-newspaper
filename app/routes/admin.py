@@ -8,6 +8,7 @@ from app import config
 from app.database import (
     get_sources, get_keyword_weights, get_youtube_channels, get_reddit_sources,
     add_youtube_channel, add_reddit_subreddit, db_conn, get_setting, set_setting,
+    add_keyword_weight, delete_keyword_weight, add_source, delete_source,
 )
 
 
@@ -160,6 +161,43 @@ async def toggle_reddit(source_id: int, _: str = Depends(require_admin)):
 async def delete_reddit(source_id: int, _: str = Depends(require_admin)):
     with db_conn() as con:
         con.execute("DELETE FROM sources WHERE id = ? AND source_type = 'reddit'", (source_id,))
+    return RedirectResponse("/admin", status_code=303)
+
+
+@router.post("/admin/keyword/add")
+async def add_keyword(
+    keyword: str = Form(...),
+    weight: float = Form(default=1.0),
+    _: str = Depends(require_admin),
+):
+    keyword = keyword.strip()
+    added = add_keyword_weight(keyword, weight)
+    msg = f"Added keyword '{keyword}'" if added else f"Keyword '{keyword}' already exists"
+    return RedirectResponse(f"/admin?msg={msg}", status_code=303)
+
+
+@router.post("/admin/keyword/{keyword_id}/delete")
+async def delete_keyword(keyword_id: int, _: str = Depends(require_admin)):
+    delete_keyword_weight(keyword_id)
+    return RedirectResponse("/admin", status_code=303)
+
+
+@router.post("/admin/source/add")
+async def add_source_route(
+    name: str = Form(...),
+    source_type: str = Form(...),
+    identifier: str = Form(...),
+    weight: float = Form(default=1.0),
+    _: str = Depends(require_admin),
+):
+    added = add_source(name, source_type, identifier, weight)
+    msg = f"Added source '{name}'" if added else f"Source '{name}' already exists"
+    return RedirectResponse(f"/admin?msg={msg}", status_code=303)
+
+
+@router.post("/admin/source/{source_id}/delete")
+async def delete_source_route(source_id: int, _: str = Depends(require_admin)):
+    delete_source(source_id)
     return RedirectResponse("/admin", status_code=303)
 
 

@@ -60,7 +60,7 @@
           {% endif %}
         {% endif %}
         {% if article.published_at %}
-        <span class="pub-time" title="{{ article.published_at }}">{{ article.published_at[:16] }}</span>
+        <span class="pub-time" data-pub="{{ article.published_at }}" title="{{ article.published_at }}">{{ article.published_at[:16] }}</span>
         {% endif %}
       </div>
 
@@ -94,4 +94,22 @@
 
 {% block scripts %}
 <script src="/static/rating.js"></script>
+<script>
+  function fmtPubTime(utcStr) {
+    // utcStr is "YYYY-MM-DD HH:MM:SS" stored as UTC
+    const dt = new Date(utcStr.replace(' ', 'T') + 'Z');
+    const now = new Date();
+    const diffMs = now - dt;
+    const diffH = diffMs / 3600000;
+    if (diffH < 1) return Math.round(diffMs / 60000) + 'm ago';
+    if (diffH < 24) return Math.round(diffH) + 'h ago';
+    if (diffH < 48) return 'Yesterday ' + dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return dt.toLocaleDateString([], { month: 'short', day: 'numeric' }) +
+           ' ' + dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  document.querySelectorAll('.pub-time[data-pub]').forEach(el => {
+    el.textContent = fmtPubTime(el.dataset.pub);
+  });
+</script>
 {% endblock %}

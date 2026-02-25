@@ -156,7 +156,15 @@
   <!-- Source Weights -->
   <section class="admin-section">
     <h3>Source Weights</h3>
-    <table class="admin-table">
+    <p class="admin-hint">HackerNews, YouTube keyword, and other non-channel sources. Use type: <code>hackernews</code>, <code>youtube</code>, or <code>reddit</code>.</p>
+    <form method="post" action="/admin/source/add" class="add-form add-form-wide">
+      <input type="text" name="name" placeholder="Name (e.g. HN: ai agents)" class="add-input" required>
+      <input type="text" name="source_type" placeholder="Type (hackernews / youtube)" class="add-input add-input-sm" required>
+      <input type="text" name="identifier" placeholder="Identifier / keyword" class="add-input" required>
+      <input type="number" name="weight" value="1.0" min="0.1" max="3.0" step="0.05" class="weight-input">
+      <button type="submit" class="btn btn-sm btn-accent">Add Source</button>
+    </form>
+    <table class="admin-table" style="margin-top:0.75rem">
       <thead>
         <tr>
           <th>Source</th>
@@ -182,11 +190,15 @@
             <span class="status-dot {% if src.enabled %}on{% else %}off{% endif %}"></span>
             {{ 'Yes' if src.enabled else 'No' }}
           </td>
-          <td>
+          <td class="action-cell">
             <form method="post" action="/admin/source/{{ src.id }}/toggle" class="inline-form">
               <button type="submit" class="btn btn-sm btn-secondary">
                 {{ 'Disable' if src.enabled else 'Enable' }}
               </button>
+            </form>
+            <form method="post" action="/admin/source/{{ src.id }}/delete" class="inline-form"
+                  onsubmit="return confirm('Delete source {{ src.name }}?')">
+              <button type="submit" class="btn btn-sm btn-danger">Remove</button>
             </form>
           </td>
         </tr>
@@ -198,13 +210,18 @@
   <!-- Keyword Weights -->
   <section class="admin-section">
     <h3>Keyword Weights</h3>
-    <table class="admin-table">
+    <form method="post" action="/admin/keyword/add" class="add-form">
+      <input type="text" name="keyword" placeholder="New keyword (e.g. agentic rag)" class="add-input" required>
+      <input type="number" name="weight" value="1.0" min="0.1" max="5.0" step="0.025" class="weight-input">
+      <button type="submit" class="btn btn-sm btn-accent">Add Keyword</button>
+    </form>
+    <table class="admin-table" style="margin-top:0.75rem">
       <thead>
         <tr>
           <th>Keyword</th>
           <th>Weight</th>
           <th>Hits</th>
-          <th>Action</th>
+          <th>Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -219,7 +236,12 @@
             </form>
           </td>
           <td>{{ kw.hits }}</td>
-          <td></td>
+          <td>
+            <form method="post" action="/admin/keyword/{{ kw.id }}/delete" class="inline-form"
+                  onsubmit="return confirm('Delete keyword \"{{ kw.keyword }}\"?')">
+              <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+            </form>
+          </td>
         </tr>
         {% endfor %}
       </tbody>

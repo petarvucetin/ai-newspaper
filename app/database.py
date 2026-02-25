@@ -271,6 +271,39 @@ def get_keyword_weights() -> list[sqlite3.Row]:
         return con.execute("SELECT * FROM keyword_weights ORDER BY weight DESC, keyword").fetchall()
 
 
+def add_keyword_weight(keyword: str, weight: float) -> bool:
+    """Add a keyword weight. Returns True if newly inserted."""
+    kw = keyword.strip().lower()
+    weight = max(0.1, min(5.0, weight))
+    with db_conn() as con:
+        cur = con.execute(
+            "INSERT OR IGNORE INTO keyword_weights (keyword, weight) VALUES (?, ?)",
+            (kw, weight),
+        )
+        return cur.rowcount > 0
+
+
+def delete_keyword_weight(keyword_id: int) -> None:
+    with db_conn() as con:
+        con.execute("DELETE FROM keyword_weights WHERE id = ?", (keyword_id,))
+
+
+def add_source(name: str, source_type: str, identifier: str, weight: float = 1.0) -> bool:
+    """Add a generic source row. Returns True if newly inserted."""
+    weight = max(0.1, min(3.0, weight))
+    with db_conn() as con:
+        cur = con.execute(
+            "INSERT OR IGNORE INTO sources (name, source_type, identifier, weight) VALUES (?, ?, ?, ?)",
+            (name.strip(), source_type.strip(), identifier.strip(), weight),
+        )
+        return cur.rowcount > 0
+
+
+def delete_source(source_id: int) -> None:
+    with db_conn() as con:
+        con.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+
+
 def get_setting(key: str, default: str = "") -> str:
     with db_conn() as con:
         row = con.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
