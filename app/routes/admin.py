@@ -223,10 +223,20 @@ async def upload_cookies(
     cookies_file: UploadFile = File(...),
     _: str = Depends(require_admin),
 ):
-    content = await cookies_file.read()
-    if not content.strip():
+    raw = await cookies_file.read()
+    if not raw.strip():
         return RedirectResponse("/admin?msg=Cookies+file+is+empty", status_code=303)
-    _COOKIES_PATH.write_bytes(content)
+    # Decode robustly — handles UTF-16 (with BOM) that some browsers produce
+    for enc in ("utf-8-sig", "utf-16", "utf-8", "latin-1"):
+        try:
+            content = raw.decode(enc)
+            break
+        except (UnicodeDecodeError, Exception):
+            continue
+    else:
+        return RedirectResponse("/admin?msg=Could+not+decode+cookies+file", status_code=303)
+    # Re-encode as plain UTF-8 (what yt-dlp expects)
+    _COOKIES_PATH.write_text(content, encoding="utf-8")
     return RedirectResponse("/admin?msg=YouTube+cookies+updated+successfully", status_code=303)
 
 
