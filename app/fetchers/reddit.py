@@ -64,12 +64,13 @@ async def fetch_reddit() -> list[RawArticle]:
                     continue
 
                 created_utc = post.get("created_utc")
+                permalink = f"https://www.reddit.com{post.get('permalink', '')}"
                 raw_posts.append({
                     "subreddit": name,
                     "source_name": f"r/{name}",
                     "post_id": post_id,
                     "title": title,
-                    "url": post.get("url") or f"https://www.reddit.com{post.get('permalink', '')}",
+                    "url": permalink,
                     "selftext": post.get("selftext", "")[:1500],
                     "author": post.get("author", "[deleted]"),
                     "published_at": datetime.fromtimestamp(created_utc, tz=timezone.utc)
