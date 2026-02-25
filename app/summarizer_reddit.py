@@ -15,6 +15,9 @@ _HEADERS = {"User-Agent": "ai-news-tracker/1.0 (public feed reader)"}
 _TOP_COMMENTS = 10
 _MAX_COMMENT_CHARS = 6_000
 
+# Limit concurrent Anthropic API calls to avoid rate limits
+_ANTHROPIC_SEMAPHORE = asyncio.Semaphore(3)
+
 
 def _api_key() -> str:
     return os.getenv("ANTHROPIC_API_KEY", "")
@@ -101,7 +104,8 @@ async def summarize_reddit(title: str, selftext: str, comments: list[str]) -> st
         return msg.content[0].text.strip()
 
     try:
-        return await asyncio.to_thread(_call)
+        async with _ANTHROPIC_SEMAPHORE:
+            return await asyncio.to_thread(_call)
     except Exception as e:
         logger.error("Reddit summarization failed for '%s': %s", title[:50], e)
         return selftext[:400] if selftext else ""

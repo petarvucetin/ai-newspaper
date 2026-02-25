@@ -14,6 +14,9 @@ load_dotenv()  # pick up .env whenever it exists, even if added after process st
 
 logger = logging.getLogger(__name__)
 
+# Limit concurrent Anthropic API calls to avoid rate limits
+_ANTHROPIC_SEMAPHORE = asyncio.Semaphore(3)
+
 # Read lazily so adding .env and restarting the server picks it up
 def _api_key() -> str:
     return os.getenv("ANTHROPIC_API_KEY", "")
@@ -138,7 +141,8 @@ async def summarize_transcript(title: str, transcript: str) -> str:
         return msg.content[0].text.strip()
 
     try:
-        summary = await asyncio.to_thread(_call_api)
+        async with _ANTHROPIC_SEMAPHORE:
+            summary = await asyncio.to_thread(_call_api)
         logger.debug("Summarized '%s': %d chars", title[:50], len(summary))
         return summary
     except Exception as e:

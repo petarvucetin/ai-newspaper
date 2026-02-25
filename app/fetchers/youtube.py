@@ -1,10 +1,16 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from app.fetchers.base import RawArticle
 from app import config
 
 logger = logging.getLogger(__name__)
+
+_COOKIES_PATH = Path(__file__).parent.parent.parent / "youtube_cookies.txt"
+
+def _cookies_file() -> str | None:
+    return str(_COOKIES_PATH) if _COOKIES_PATH.exists() else None
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +60,10 @@ def _fetch_channels_sync(channels: list[str], limit: int, cutoff: datetime) -> l
         "ignoreerrors": True,
         "playlistend": limit,
     }
+    cookies = _cookies_file()
+    if cookies:
+        ydl_opts["cookiefile"] = cookies
+        logger.debug("YouTube channels: using cookies file")
 
     results: list[RawArticle] = []
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -109,6 +119,10 @@ def _fetch_search_sync(
         "skip_download": True,
         "ignoreerrors": True,
     }
+    cookies = _cookies_file()
+    if cookies:
+        ydl_opts["cookiefile"] = cookies
+        logger.debug("YouTube search: using cookies file")
 
     results: list[RawArticle] = []
     discovered: dict[str, str] = {}  # identifier -> display name

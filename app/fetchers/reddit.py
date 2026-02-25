@@ -10,6 +10,26 @@ logger = logging.getLogger(__name__)
 _BASE = "https://www.reddit.com/r/{sub}/top.json"
 _HEADERS = {"User-Agent": "ai-news-tracker/1.0 (public feed reader)"}
 
+# Max concurrent comment-fetch requests to avoid 429s
+_COMMENT_SEMAPHORE = asyncio.Semaphore(3)
+# Seconds between subreddit listing requests
+_LISTING_DELAY = 1.0
+
+
+async def _get_with_retry(client: httpx.AsyncClient, url: str, params: dict, retries: int = 3) -> httpx.Response:
+    """GET with exponential backoff on 429."""
+    for attempt in range(retries):
+        resp = await client.get(url, params=params)
+        if resp.status_code == 429:
+            wait = 2 ** attempt * 2  # 2s, 4s, 8s
+            logger.warning("Reddit 429 on %s — retrying in %ds", url, wait)
+            await asyncio.sleep(wait)
+            continue
+        resp.raise_for_status()
+        return resp
+    resp.raise_for_status()
+    return resp
+
 
 async def fetch_reddit() -> list[RawArticle]:
     reddit_cfg = config.get("sources.reddit", {})
@@ -17,18 +37,20 @@ async def fetch_reddit() -> list[RawArticle]:
     post_limit = min(reddit_cfg.get("post_limit", 25), 100)
     time_filter = reddit_cfg.get("time_filter", "day")
 
-    # --- Phase 1: fetch post listings ---
+    # --- Phase 1: fetch post listings (sequential with delay) ---
     raw_posts: list[dict] = []
 
-    async with httpx.AsyncClient(timeout=15, headers=_HEADERS, follow_redirects=True) as client:
-        for sub_name in subreddits:
+    async with httpx.AsyncClient(timeout=20, headers=_HEADERS, follow_redirects=True) as client:
+        for i, sub_name in enumerate(subreddits):
+            if i > 0:
+                await asyncio.sleep(_LISTING_DELAY)
             name = sub_name.lstrip("r/")
             try:
-                resp = await client.get(
+                resp = await _get_with_retry(
+                    client,
                     _BASE.format(sub=name),
                     params={"t": time_filter, "limit": post_limit, "raw_json": "1"},
                 )
-                resp.raise_for_status()
                 data = resp.json()
             except Exception as e:
                 logger.error("Reddit fetch failed for r/%s: %s", name, e)
@@ -60,17 +82,18 @@ async def fetch_reddit() -> list[RawArticle]:
         logger.info("Reddit: no posts found")
         return []
 
-    # --- Phase 2: fetch comments + summarize concurrently ---
+    # --- Phase 2: fetch comments + summarize (throttled) ---
     from app.summarizer_reddit import fetch_and_summarize_reddit
+
+    async def _throttled(post: dict):
+        async with _COMMENT_SEMAPHORE:
+            return await fetch_and_summarize_reddit(
+                post["post_id"], post["subreddit"], post["title"], post["selftext"]
+            )
 
     logger.info("Reddit: summarizing %d posts via top comments…", len(raw_posts))
     results = await asyncio.gather(
-        *[
-            fetch_and_summarize_reddit(
-                p["post_id"], p["subreddit"], p["title"], p["selftext"]
-            )
-            for p in raw_posts
-        ],
+        *[_throttled(p) for p in raw_posts],
         return_exceptions=True,
     )
 
