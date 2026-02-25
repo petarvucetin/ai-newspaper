@@ -66,7 +66,7 @@ def _get_transcript_sync(video_id: str) -> str:
             "subtitlesformat": "vtt",
             "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
             "ignoreerrors": True,
-            "format": "bestaudio/best",
+            "ignore_no_formats_error": True,
         }
         cookies = _cookies_file()
         if cookies:
@@ -78,9 +78,8 @@ def _get_transcript_sync(video_id: str) -> str:
                 ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
         except Exception as e:
             logger.debug("yt-dlp download error for %s: %s", video_id, e)
-            return ""
 
-        # Find any .vtt file written to tmpdir
+        # Check for VTT file regardless of whether yt-dlp reported an error
         for fname in os.listdir(tmpdir):
             if fname.endswith(".vtt"):
                 try:

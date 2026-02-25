@@ -261,6 +261,16 @@ def get_article_by_id(article_id: int) -> sqlite3.Row | None:
         ).fetchone()
 
 
+def get_existing_summary(external_id: str) -> str | None:
+    """Return stored summary for an article if it exists and is non-empty, else None."""
+    with db_conn() as con:
+        row = con.execute(
+            "SELECT summary FROM articles WHERE external_id = ? AND summary IS NOT NULL AND summary != ''",
+            (external_id,),
+        ).fetchone()
+    return row["summary"] if row else None
+
+
 def get_sources() -> list[sqlite3.Row]:
     with db_conn() as con:
         return con.execute("SELECT * FROM sources ORDER BY source_type, name").fetchall()

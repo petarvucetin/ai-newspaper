@@ -82,8 +82,19 @@ async def fetch_reddit() -> list[RawArticle]:
         logger.info("Reddit: no posts found")
         return []
 
-    # --- Phase 2: fetch comments + summarize (throttled) ---
+    # --- Phase 2: fetch comments + summarize (skip if already in DB) ---
     from app.summarizer_reddit import fetch_and_summarize_reddit
+    from app.database import get_existing_summary
+
+    cached_results: dict[str, tuple[str, int]] = {}
+    to_summarize = []
+    for post in raw_posts:
+        cached = get_existing_summary(post["post_id"])
+        if cached:
+            cached_results[post["post_id"]] = (cached, 0)
+            logger.debug("Reddit: reusing stored summary for %s", post["post_id"])
+        else:
+            to_summarize.append(post)
 
     async def _throttled(post: dict):
         async with _COMMENT_SEMAPHORE:
@@ -91,19 +102,22 @@ async def fetch_reddit() -> list[RawArticle]:
                 post["post_id"], post["subreddit"], post["title"], post["selftext"]
             )
 
-    logger.info("Reddit: summarizing %d posts via top comments…", len(raw_posts))
-    results = await asyncio.gather(
-        *[_throttled(p) for p in raw_posts],
-        return_exceptions=True,
-    )
+    if to_summarize:
+        logger.info("Reddit: summarizing %d new posts via top comments…", len(to_summarize))
+        results = await asyncio.gather(
+            *[_throttled(p) for p in to_summarize],
+            return_exceptions=True,
+        )
+        for post, result in zip(to_summarize, results):
+            if isinstance(result, Exception):
+                logger.error("Summarize failed for %s: %s", post["post_id"], result)
+                cached_results[post["post_id"]] = (post["selftext"][:400], 0)
+            else:
+                cached_results[post["post_id"]] = result
 
     articles: list[RawArticle] = []
-    for post, result in zip(raw_posts, results):
-        if isinstance(result, Exception):
-            logger.error("Summarize failed for %s: %s", post["post_id"], result)
-            summary, num_comments = post["selftext"][:400], 0
-        else:
-            summary, num_comments = result
+    for post in raw_posts:
+        summary, num_comments = cached_results.get(post["post_id"], (post["selftext"][:400], 0))
 
         article = RawArticle(
             source_name=post["source_name"],

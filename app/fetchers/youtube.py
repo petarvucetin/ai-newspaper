@@ -223,20 +223,30 @@ async def fetch_youtube() -> list[RawArticle]:
         logger.info("YouTube: no videos found")
         return []
 
-    # --- Phase 2: fetch transcripts + summarize concurrently ---
+    # --- Phase 2: fetch transcripts + summarize (skip if already in DB) ---
     from app.summarizer import fetch_transcript_and_summarize
+    from app.database import get_existing_summary
 
-    logger.info("YouTube: fetching transcripts for %d videos…", len(all_articles))
-    summaries = await asyncio.gather(
-        *[fetch_transcript_and_summarize(a.external_id, a.title) for a in all_articles],
-        return_exceptions=True,
-    )
-
-    for article, summary in zip(all_articles, summaries):
-        if isinstance(summary, Exception):
-            logger.error("Transcript error for %s: %s", article.external_id, summary)
+    to_summarize = []
+    for article in all_articles:
+        cached = get_existing_summary(article.external_id)
+        if cached:
+            article.summary = cached
+            logger.debug("YouTube: reusing stored summary for %s", article.external_id)
         else:
-            article.summary = summary or ""
+            to_summarize.append(article)
+
+    if to_summarize:
+        logger.info("YouTube: fetching transcripts for %d new videos…", len(to_summarize))
+        summaries = await asyncio.gather(
+            *[fetch_transcript_and_summarize(a.external_id, a.title) for a in to_summarize],
+            return_exceptions=True,
+        )
+        for article, summary in zip(to_summarize, summaries):
+            if isinstance(summary, Exception):
+                logger.error("Transcript error for %s: %s", article.external_id, summary)
+            else:
+                article.summary = summary or ""
 
     logger.info("YouTube: %d articles ready", len(all_articles))
     return all_articles
