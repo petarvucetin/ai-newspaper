@@ -59,6 +59,7 @@ def _fetch_channels_sync(channels: list[str], limit: int, cutoff: datetime) -> l
         "skip_download": True,
         "ignoreerrors": True,
         "playlistend": limit,
+        "extractor_args": {"youtubetab": {"skip": ["authcheck"]}},
     }
     cookies = _cookies_file()
     if cookies:

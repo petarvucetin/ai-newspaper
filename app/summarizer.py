@@ -66,6 +66,7 @@ def _get_transcript_sync(video_id: str) -> str:
             "subtitlesformat": "vtt",
             "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
             "ignoreerrors": True,
+            "format": "bestaudio/best",
         }
         cookies = _cookies_file()
         if cookies:
