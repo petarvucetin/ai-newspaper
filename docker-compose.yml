@@ -9,7 +9,7 @@ services:
       # Mount config so you can edit without rebuilding
       - ./config.yaml:/app/config.yaml:ro
       # Mount cookies file if it exists (used to bypass YouTube IP blocks)
-      - ./youtube_cookies.txt:/app/youtube_cookies.txt:ro
+      - ./youtube_cookies.txt:/app/youtube_cookies.txt
     env_file:
       - .env
     restart: unless-stopped
