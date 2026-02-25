@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db, seed_keywords, seed_sources
 from app import config
-from app.routes import newspaper, rating, admin
+from app.routes import newspaper, rating, admin, dismiss
 from app.scheduler import setup_scheduler
 
 logging.basicConfig(
@@ -45,3 +45,4 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.include_router(newspaper.router)
 app.include_router(rating.router)
 app.include_router(admin.router)
+app.include_router(dismiss.router)

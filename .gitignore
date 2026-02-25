@@ -1,4 +1,5 @@
 .env
+youtube_cookies.txt
 data/
 __pycache__/
 *.pyc

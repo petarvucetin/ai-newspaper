@@ -33,7 +33,7 @@ def _build_article(entry: dict, source_name: str) -> RawArticle | None:
         author=entry.get("uploader") or entry.get("channel") or "",
         published_at=_parse_upload_date(entry.get("upload_date")),
         thumbnail_url="",  # thumbnails disabled
-        upvotes=entry.get("like_count") or 0,
+        upvotes=entry.get("view_count") or 0,
         summary="",  # filled in later by summarizer
     )
 

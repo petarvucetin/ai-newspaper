@@ -5,10 +5,23 @@ Called for each YouTube article during the fetch pipeline.
 import asyncio
 import logging
 import os
+import time
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv()  # pick up .env whenever it exists, even if added after process start
 
 logger = logging.getLogger(__name__)
 
-_ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+# Read lazily so adding .env and restarting the server picks it up
+def _api_key() -> str:
+    return os.getenv("ANTHROPIC_API_KEY", "")
+
+# Optional cookies file to bypass YouTube IP blocks
+_COOKIES_PATH = Path(__file__).parent.parent / "youtube_cookies.txt"
+
+def _cookies_file() -> str | None:
+    return str(_COOKIES_PATH) if _COOKIES_PATH.exists() else None
 
 # Max transcript chars sent to Claude (keeps token cost low — ~2k tokens)
 _TRANSCRIPT_CHAR_LIMIT = 8_000
@@ -21,7 +34,19 @@ def _get_transcript_sync(video_id: str) -> str:
         NoTranscriptFound, TranscriptsDisabled, VideoUnavailable
     )
 
-    api = YouTubeTranscriptApi()
+    cookies_path = _cookies_file()
+    if cookies_path:
+        import requests
+        from http.cookiejar import MozillaCookieJar
+        session = requests.Session()
+        jar = MozillaCookieJar(cookies_path)
+        jar.load(ignore_discard=True, ignore_expires=True)
+        session.cookies = jar
+        api = YouTubeTranscriptApi(http_client=session)
+        logger.debug("Using cookies file for transcript fetch")
+    else:
+        api = YouTubeTranscriptApi()
+
     try:
         # Try English first; fall back to any available language
         try:
@@ -53,6 +78,9 @@ def _get_transcript_sync(video_id: str) -> str:
         logger.debug("No transcript for %s: %s", video_id, e)
         return ""
     except Exception as e:
+        # Re-raise IP/request blocks so callers can retry
+        if type(e).__name__ in ("IpBlocked", "RequestBlocked"):
+            raise
         logger.debug("Transcript fetch failed for %s: %s", video_id, e)
         return ""
 
@@ -70,7 +98,8 @@ async def summarize_transcript(title: str, transcript: str) -> str:
     if not transcript:
         return ""
 
-    if not _ANTHROPIC_API_KEY:
+    api_key = _api_key()
+    if not api_key:
         logger.warning("ANTHROPIC_API_KEY not set — using transcript excerpt as summary")
         excerpt = transcript[:600].rstrip()
         return excerpt + ("…" if len(transcript) > 600 else "")
@@ -95,7 +124,7 @@ async def summarize_transcript(title: str, transcript: str) -> str:
     )
 
     def _call_api() -> str:
-        client = anthropic.Anthropic(api_key=_ANTHROPIC_API_KEY)
+        client = anthropic.Anthropic(api_key=api_key)
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=400,

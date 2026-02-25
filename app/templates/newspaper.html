@@ -3,7 +3,7 @@
 {% macro source_badge(source_type, source_name) %}
 <span class="source-badge source-{{ source_type }}">
   {% if source_type == 'reddit' %}r/{{ source_name.replace('r/', '') }}
-  {% elif source_type == 'youtube' %}▶ YouTube
+  {% elif source_type in ('youtube', 'youtube_channel') %}▶ {{ source_name.replace('YouTube: ', '') }}
   {% elif source_type == 'hackernews' %}Y HN
   {% else %}{{ source_name }}{% endif %}
 </span>
@@ -17,6 +17,19 @@
         title="{{ i }} star{{ 's' if i > 1 else '' }}">&#9733;</span>
   {% endfor %}
 </div>
+{% endmacro %}
+
+{% macro fmt_count(n) %}
+  {%- if n >= 1000000 -%}{{ "%.1f"|format(n / 1000000) }}M
+  {%- elif n >= 1000 -%}{{ "%.1f"|format(n / 1000) }}K
+  {%- else -%}{{ n }}
+  {%- endif -%}
+{% endmacro %}
+
+{% macro fmt_date(dt) %}
+  {%- if dt -%}
+    {%- set parts = dt[:16] -%}{{ parts }}
+  {%- endif -%}
 {% endmacro %}
 
 {% block title %}The AI Intelligence — Daily Edition{% endblock %}
@@ -34,8 +47,20 @@
     <div class="article-body">
       <div class="article-meta-top">
         {{ source_badge(article.source_type, article.source_name) }}
-        {% if article.upvotes > 0 %}
-        <span class="upvotes">▲ {{ article.upvotes }}</span>
+        {% if article.source_type in ('youtube', 'youtube_channel') %}
+          {% if article.upvotes > 0 %}
+          <span class="view-count">&#128065; {{ fmt_count(article.upvotes) }} views</span>
+          {% endif %}
+        {% else %}
+          {% if article.upvotes > 0 %}
+          <span class="upvotes">▲ {{ fmt_count(article.upvotes) }}</span>
+          {% endif %}
+          {% if article.source_type == 'reddit' and article.num_comments %}
+          <span class="comment-count">&#128172; {{ fmt_count(article.num_comments) }}</span>
+          {% endif %}
+        {% endif %}
+        {% if article.published_at %}
+        <span class="pub-time" title="{{ article.published_at }}">{{ article.published_at[:16] }}</span>
         {% endif %}
       </div>
 
@@ -54,11 +79,11 @@
       <div class="article-footer">
         <div class="article-byline">
           {% if article.author %}<span class="author">{{ article.author }}</span>{% endif %}
-          {% if article.published_at %}
-          <span class="pub-time" title="{{ article.published_at }}">{{ article.published_at[:10] if article.published_at else '' }}</span>
-          {% endif %}
         </div>
-        {{ star_widget(article.id, article.user_rating) }}
+        <div class="article-actions">
+          {{ star_widget(article.id, article.user_rating) }}
+          <button class="dismiss-btn" data-article-id="{{ article.id }}" title="Dismiss article">✕</button>
+        </div>
       </div>
     </div>
   </article>

@@ -2,10 +2,18 @@ from fastapi import APIRouter, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-from app.database import get_articles
+from datetime import datetime, timezone
+from app.database import get_articles, db_conn
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+
+
+def _last_fetched() -> str | None:
+    """Return the most recent fetched_at timestamp across all articles."""
+    with db_conn() as con:
+        row = con.execute("SELECT MAX(fetched_at) AS ts FROM articles").fetchone()
+    return row["ts"] if row else None
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -21,5 +29,6 @@ async def newspaper(
             "request": request,
             "articles": articles,
             "active_filter": source,
+            "last_fetched": _last_fetched(),
         },
     )

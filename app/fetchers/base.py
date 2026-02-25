@@ -13,3 +13,4 @@ class RawArticle:
     published_at: datetime = field(default_factory=datetime.utcnow)
     thumbnail_url: str = ""
     upvotes: int = 0
+    num_comments: int = 0

@@ -7,17 +7,30 @@
   <h2 class="admin-heading">Admin Dashboard</h2>
 
   <!-- Fetch Now -->
-  <section class="admin-section">
+  <section class="admin-section" id="fetch-section">
     <h3>Manual Fetch</h3>
-    <form method="post" action="/admin/fetch-now">
-      <button type="submit" class="btn btn-primary">Fetch Now</button>
-    </form>
+    <div class="fetch-controls">
+      <button class="btn btn-primary" id="fetch-btn" onclick="startFetch()">Fetch Now</button>
+      <span class="fetch-status-badge" id="fetch-badge"></span>
+    </div>
+    <div class="fetch-progress" id="fetch-progress" style="display:none">
+      <div class="fetch-log" id="fetch-log"></div>
+      <div class="fetch-summary" id="fetch-summary"></div>
+    </div>
   </section>
+
+  {% if msg %}
+  <div class="admin-msg">{{ msg }}</div>
+  {% endif %}
 
   <!-- YouTube Channels -->
   <section class="admin-section">
     <h3>YouTube Channels</h3>
     <p class="admin-hint">Pinned channels are fetched directly. Discovered channels appear here after keyword searches — pin them to subscribe.</p>
+    <form method="post" action="/admin/channel/add" class="add-form">
+      <input type="text" name="channel" placeholder="@ChannelHandle" class="add-input" required>
+      <button type="submit" class="btn btn-sm btn-accent">Add Channel</button>
+    </form>
     {% if channels %}
     <table class="admin-table">
       <thead>
@@ -72,6 +85,63 @@
     </table>
     {% else %}
     <p class="admin-empty">No channels yet. Run a fetch to discover channels via keyword search.</p>
+    {% endif %}
+  </section>
+
+  <!-- Reddit Subreddits -->
+  <section class="admin-section">
+    <h3>Reddit Subreddits</h3>
+    <p class="admin-hint">Active subreddits are fetched each run. Disable to pause without deleting.</p>
+    <form method="post" action="/admin/reddit/add" class="add-form">
+      <input type="text" name="subreddit" placeholder="r/MachineLearning or MachineLearning" class="add-input" required>
+      <button type="submit" class="btn btn-sm btn-accent">Add Subreddit</button>
+    </form>
+    {% if reddit_sources %}
+    <table class="admin-table" style="margin-top:0.75rem">
+      <thead>
+        <tr>
+          <th>Subreddit</th>
+          <th>Status</th>
+          <th>Weight</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reddit_sources %}
+        <tr>
+          <td>
+            <a href="https://www.reddit.com/r/{{ r.identifier }}" target="_blank" rel="noopener">
+              r/{{ r.identifier }}
+            </a>
+          </td>
+          <td>
+            <span class="status-dot {% if r.enabled %}on{% else %}off{% endif %}\"></span>
+            {{ 'Active' if r.enabled else 'Disabled' }}
+          </td>
+          <td>
+            <form method="post" action="/admin/source/{{ r.id }}/weight" class="inline-form">
+              <input type="number" name="weight" value="{{ '%.2f'|format(r.weight) }}"
+                     min="0.1" max="3.0" step="0.05" class="weight-input">
+              <button type="submit" class="btn btn-sm">Save</button>
+            </form>
+          </td>
+          <td class="action-cell">
+            <form method="post" action="/admin/reddit/{{ r.id }}/toggle" class="inline-form">
+              <button type="submit" class="btn btn-sm btn-secondary">
+                {{ 'Disable' if r.enabled else 'Enable' }}
+              </button>
+            </form>
+            <form method="post" action="/admin/reddit/{{ r.id }}/delete" class="inline-form"
+                  onsubmit="return confirm('Remove r/{{ r.identifier }} from the list?')">
+              <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="admin-empty" style="margin-top:0.5rem">No subreddits yet.</p>
     {% endif %}
   </section>
 
@@ -148,4 +218,65 @@
     </table>
   </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _pollInterval = null;
+
+async function startFetch() {
+  const btn = document.getElementById('fetch-btn');
+  const badge = document.getElementById('fetch-badge');
+  const progress = document.getElementById('fetch-progress');
+  const log = document.getElementById('fetch-log');
+
+  btn.disabled = true;
+  badge.className = 'fetch-status-badge badge-running';
+  badge.textContent = 'Starting…';
+  log.innerHTML = '';
+  progress.style.display = 'block';
+
+  try {
+    const resp = await fetch('/admin/fetch-now', { method: 'POST', credentials: 'include' });
+    const data = await resp.json();
+    if (data.status === 'already_running') {
+      badge.textContent = 'Already running…';
+    }
+  } catch (e) {
+    badge.className = 'fetch-status-badge badge-error';
+    badge.textContent = 'Failed to start';
+    btn.disabled = false;
+    return;
+  }
+
+  _pollInterval = setInterval(async () => {
+    try {
+      const resp = await fetch('/admin/fetch-status', { credentials: 'include' });
+      const data = await resp.json();
+
+      log.innerHTML = data.log.map(l => `<div class="log-line">${escHtml(l)}</div>`).join('');
+      log.scrollTop = log.scrollHeight;
+
+      if (data.status === 'done') {
+        clearInterval(_pollInterval);
+        btn.disabled = false;
+        badge.className = 'fetch-status-badge badge-done';
+        badge.textContent = `✓ ${data.inserted} new, ${data.skipped} skipped — ${data.elapsed}s`;
+      } else if (data.status === 'error') {
+        clearInterval(_pollInterval);
+        btn.disabled = false;
+        badge.className = 'fetch-status-badge badge-error';
+        badge.textContent = `✗ ${data.error}`;
+      } else {
+        badge.className = 'fetch-status-badge badge-running';
+        badge.textContent = 'Running…';
+      }
+    } catch (e) { /* network hiccup, keep polling */ }
+  }, 1000);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
 {% endblock %}
