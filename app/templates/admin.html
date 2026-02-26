@@ -27,6 +27,45 @@
     </form>
   </section>
 
+  <!-- API Cost -->
+  <section class="admin-section">
+    <h3>API Cost (last 30 days)</h3>
+    {% set o = api_usage.overall %}
+    <div class="cost-summary">
+      <div class="cost-total">${{ "%.4f"|format(o.total_cost or 0) }}</div>
+      <div class="cost-meta">
+        {{ "{:,}".format((o.total_input or 0)|int) }} input tokens &nbsp;·&nbsp;
+        {{ "{:,}".format((o.total_output or 0)|int) }} output tokens &nbsp;·&nbsp;
+        {{ (o.total_calls or 0)|int }} calls
+      </div>
+    </div>
+    {% if api_usage.totals %}
+    <table class="admin-table" style="margin-top:0.75rem">
+      <thead><tr><th>Purpose</th><th>Calls</th><th>Input tok</th><th>Output tok</th><th>Cost</th></tr></thead>
+      <tbody>
+      {% for row in api_usage.totals %}
+      <tr>
+        <td>{{ row.purpose or row.model }}</td>
+        <td>{{ row.calls }}</td>
+        <td>{{ "{:,}".format(row.input_tokens|int) }}</td>
+        <td>{{ "{:,}".format(row.output_tokens|int) }}</td>
+        <td>${{ "%.4f"|format(row.cost_usd) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if api_usage.daily %}
+    <p class="admin-hint" style="margin-top:0.75rem">Last 7 days:
+      {% for d in api_usage.daily %}
+        <strong>{{ d.day }}</strong> ${{ "%.4f"|format(d.cost_usd) }}{% if not loop.last %} &nbsp;·&nbsp; {% endif %}
+      {% endfor %}
+    </p>
+    {% endif %}
+    {% else %}
+    <p class="admin-empty">No API calls recorded yet.</p>
+    {% endif %}
+  </section>
+
   {% if msg %}
   <div class="admin-msg">{{ msg }}</div>
   {% endif %}

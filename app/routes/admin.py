@@ -10,6 +10,7 @@ from app.database import (
     get_sources, get_keyword_weights, get_youtube_channels, get_reddit_sources,
     add_youtube_channel, add_reddit_subreddit, db_conn, get_setting, set_setting,
     add_keyword_weight, delete_keyword_weight, add_source, delete_source,
+    get_api_usage_summary,
 )
 
 _COOKIES_PATH = Path(__file__).parent.parent.parent / "youtube_cookies.txt"
@@ -76,6 +77,7 @@ async def admin_get(request: Request, _: str = Depends(require_admin), msg: str 
             "schedule_time": schedule_time,
             "auto_enabled": auto_enabled,
             "cookies_status": _cookies_status(),
+            "api_usage": get_api_usage_summary(),
         },
     )
 

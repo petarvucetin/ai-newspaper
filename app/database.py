@@ -56,6 +56,17 @@ CREATE TABLE IF NOT EXISTS settings (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS api_usage (
+    id INTEGER PRIMARY KEY,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cost_usd REAL NOT NULL,
+    purpose TEXT,
+    called_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+
 CREATE INDEX IF NOT EXISTS idx_articles_display_score ON articles(display_score DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_fetched_at ON articles(fetched_at DESC);
 CREATE INDEX IF NOT EXISTS idx_articles_source_id ON articles(source_id);
@@ -73,6 +84,8 @@ def init_db() -> None:
         cols = {row[1] for row in con.execute("PRAGMA table_info(articles)")}
         if "dismissed" not in cols:
             con.execute("ALTER TABLE articles ADD COLUMN dismissed BOOLEAN DEFAULT 0")
+        if "dismissed_at" not in cols:
+            con.execute("ALTER TABLE articles ADD COLUMN dismissed_at DATETIME")
         if "num_comments" not in cols:
             con.execute("ALTER TABLE articles ADD COLUMN num_comments INTEGER DEFAULT 0")
     print(f"Database initialized at {DB_PATH}")
@@ -346,6 +359,86 @@ def add_source(name: str, source_type: str, identifier: str, weight: float = 1.0
 def delete_source(source_id: int) -> None:
     with db_conn() as con:
         con.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+
+
+# Pricing per million tokens (update if Anthropic changes rates)
+_PRICING = {
+    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00},
+}
+_DEFAULT_PRICING = {"input": 0.80, "output": 4.00}
+
+
+def log_api_usage(model: str, input_tokens: int, output_tokens: int, purpose: str = "") -> float:
+    """Record an API call and return cost in USD."""
+    rates = _PRICING.get(model, _DEFAULT_PRICING)
+    cost = (input_tokens * rates["input"] + output_tokens * rates["output"]) / 1_000_000
+    with db_conn() as con:
+        con.execute(
+            "INSERT INTO api_usage (model, input_tokens, output_tokens, cost_usd, purpose) VALUES (?, ?, ?, ?, ?)",
+            (model, input_tokens, output_tokens, cost, purpose),
+        )
+    return cost
+
+
+def get_api_usage_summary() -> dict:
+    """Return aggregated usage stats: total cost, tokens, per-model breakdown, last 30 days."""
+    with db_conn() as con:
+        totals = con.execute(
+            """SELECT model, purpose,
+                      SUM(input_tokens) AS input_tokens,
+                      SUM(output_tokens) AS output_tokens,
+                      SUM(cost_usd) AS cost_usd,
+                      COUNT(*) AS calls
+               FROM api_usage
+               WHERE called_at >= datetime('now', '-30 days')
+               GROUP BY model, purpose
+               ORDER BY cost_usd DESC"""
+        ).fetchall()
+        overall = con.execute(
+            """SELECT SUM(cost_usd) AS total_cost,
+                      SUM(input_tokens) AS total_input,
+                      SUM(output_tokens) AS total_output,
+                      COUNT(*) AS total_calls
+               FROM api_usage
+               WHERE called_at >= datetime('now', '-30 days')"""
+        ).fetchone()
+        daily = con.execute(
+            """SELECT DATE(called_at) AS day, SUM(cost_usd) AS cost_usd, COUNT(*) AS calls
+               FROM api_usage
+               WHERE called_at >= datetime('now', '-7 days')
+               GROUP BY day ORDER BY day DESC"""
+        ).fetchall()
+    return {
+        "totals": [dict(r) for r in totals],
+        "overall": dict(overall) if overall else {},
+        "daily": [dict(r) for r in daily],
+    }
+
+
+def get_dismissed_articles(limit: int = 200) -> list[sqlite3.Row]:
+    """Return dismissed articles from the last 7 days, newest first."""
+    with db_conn() as con:
+        return con.execute(
+            """SELECT a.*, s.name AS source_name, s.source_type,
+                      (SELECT score FROM ratings WHERE article_id = a.id ORDER BY rated_at DESC LIMIT 1) AS user_rating
+               FROM articles a JOIN sources s ON a.source_id = s.id
+               WHERE a.dismissed = 1
+                 AND (a.dismissed_at IS NULL OR a.dismissed_at >= datetime('now', '-7 days'))
+               ORDER BY COALESCE(a.dismissed_at, a.fetched_at) DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+
+
+def purge_old_dismissed() -> int:
+    """Delete dismissed articles older than 7 days. Returns count deleted."""
+    with db_conn() as con:
+        cur = con.execute(
+            """DELETE FROM articles
+               WHERE dismissed = 1
+                 AND dismissed_at IS NOT NULL
+                 AND dismissed_at < datetime('now', '-7 days')"""
+        )
+        return cur.rowcount
 
 
 def get_setting(key: str, default: str = "") -> str:

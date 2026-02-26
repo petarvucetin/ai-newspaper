@@ -94,18 +94,21 @@ async def summarize_reddit(title: str, selftext: str, comments: list[str]) -> st
         "Be direct and concise. Do not include a heading or label like 'TL;DR:'."
     )
 
-    def _call() -> str:
+    def _call() -> tuple[str, int, int]:
         client = anthropic.Anthropic(api_key=api_key)
         msg = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=150,
             messages=[{"role": "user", "content": prompt}],
         )
-        return msg.content[0].text.strip()
+        return msg.content[0].text.strip(), msg.usage.input_tokens, msg.usage.output_tokens
 
     try:
         async with _ANTHROPIC_SEMAPHORE:
-            return await asyncio.to_thread(_call)
+            summary, input_tok, output_tok = await asyncio.to_thread(_call)
+        from app.database import log_api_usage
+        log_api_usage("claude-haiku-4-5-20251001", input_tok, output_tok, "reddit_summary")
+        return summary
     except Exception as e:
         logger.error("Reddit summarization failed for '%s': %s", title[:50], e)
         return selftext[:400] if selftext else ""

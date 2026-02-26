@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-from app.database import get_articles, db_conn
+from app.database import get_articles, get_dismissed_articles, db_conn
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -21,8 +21,11 @@ async def newspaper(
     request: Request,
     source: str = Query(default="all"),
 ):
-    source_type = None if source in ("all", "bookmarks") else source
-    articles = get_articles(limit=100, source_type=source_type)
+    if source == "dismissed":
+        articles = get_dismissed_articles()
+    else:
+        source_type = None if source in ("all", "bookmarks") else source
+        articles = get_articles(limit=100, source_type=source_type)
     return templates.TemplateResponse(
         "newspaper.html",
         {

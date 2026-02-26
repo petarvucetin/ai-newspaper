@@ -2,7 +2,7 @@ import asyncio
 import logging
 from difflib import SequenceMatcher
 from datetime import datetime, timezone
-from app.database import db_conn, get_sources
+from app.database import db_conn, get_sources, purge_old_dismissed
 from app.scoring.relevancy import score_article
 from app.fetchers.hackernews import fetch_hackernews
 from app.fetchers.reddit import fetch_reddit
@@ -151,6 +151,10 @@ async def _run_fetch_inner() -> dict:
             inserted += 1
         else:
             skipped += 1
+
+    purged = purge_old_dismissed()
+    if purged:
+        fetch_state.add(f"🗑 Purged {purged} dismissed articles older than 7 days")
 
     fetch_state.finish(inserted, skipped, len(all_articles))
     fetch_state.add(f"✓ Done — {inserted} new, {skipped} skipped ({len(all_articles)} total)")

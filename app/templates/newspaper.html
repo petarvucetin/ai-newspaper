@@ -100,7 +100,11 @@
         <div class="article-actions">
           {{ star_widget(article.id, article.user_rating) }}
           <button class="bookmark-btn" data-article-id="{{ article.id }}" title="Bookmark">&#9711;</button>
+          {% if active_filter == 'dismissed' %}
+          <button class="restore-btn" data-article-id="{{ article.id }}" title="Restore article">↩</button>
+          {% else %}
           <button class="dismiss-btn" data-article-id="{{ article.id }}" title="Dismiss article">✕</button>
+          {% endif %}
           {% if article.source_type in ('reddit', 'youtube_channel', 'youtube') %}
           <button class="remove-source-btn" title="Remove source: {{ article.source_name }}">&#128683;</button>
           {% endif %}
@@ -191,11 +195,24 @@
         btn.textContent = '☆';
         btn.classList.remove('active');
         card.classList.remove('bookmarked');
+        {% if active_filter == 'bookmarks' %}
+        card.style.transition = 'opacity 0.15s, transform 0.15s';
+        card.style.opacity = '0';
+        card.style.transform = 'scale(0.97)';
+        setTimeout(() => card.remove(), 150);
+        {% endif %}
       } else {
         bookmarks.add(id);
         btn.textContent = '★';
         btn.classList.add('active');
         card.classList.add('bookmarked');
+        {% if active_filter != 'bookmarks' %}
+        // Move to bookmarks tab — remove from current view
+        card.style.transition = 'opacity 0.15s, transform 0.15s';
+        card.style.opacity = '0';
+        card.style.transform = 'scale(0.97)';
+        setTimeout(() => card.remove(), 150);
+        {% endif %}
       }
       saveBookmarks(bookmarks);
     });
@@ -219,23 +236,22 @@
     clearTimeout(undoTimeout);
   }
 
-  async function commitDismiss() {
+  function hideToastAndClear() {
     hideToast();
-    if (!pendingDismiss) return;
-    const { articleId } = pendingDismiss;
     pendingDismiss = null;
-    try {
-      await fetch(`/dismiss/${articleId}`, { method: 'DELETE' });
-    } catch (err) {
-      console.error('Dismiss error:', err);
-    }
   }
 
-  undoBtn.addEventListener('click', () => {
+  undoBtn.addEventListener('click', async () => {
     if (!pendingDismiss) return;
-    const { card, grid, nextSibling } = pendingDismiss;
+    const { card, articleId, grid, nextSibling } = pendingDismiss;
     pendingDismiss = null;
     hideToast();
+    clearTimeout(undoTimeout);
+    try {
+      await fetch(`/restore/${articleId}`, { method: 'POST' });
+    } catch (err) {
+      console.error('Restore error:', err);
+    }
     // Re-insert card at its original position
     grid.insertBefore(card, nextSibling);
     card.style.transition = 'opacity 0.2s, transform 0.2s';
@@ -243,23 +259,30 @@
     card.style.transform = '';
   });
 
-  function dismissCard(card) {
+  async function dismissCard(card) {
     const articleId = card.dataset.articleId;
-    // Commit any prior pending dismiss immediately
-    if (pendingDismiss) commitDismiss();
+    // Commit any prior pending dismiss (just clear — already in DB)
+    if (pendingDismiss) hideToastAndClear();
 
     const grid = card.parentNode;
     const nextSibling = card.nextSibling;
 
+    // Dismiss immediately in DB
+    try {
+      await fetch(`/dismiss/${articleId}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Dismiss error:', err);
+    }
+
     card.style.transition = 'opacity 0.15s, transform 0.15s';
     card.style.opacity = '0';
     card.style.transform = 'scale(0.97)';
-
-    // Remove card after fade — grid reflows immediately
     setTimeout(() => card.remove(), 150);
 
     pendingDismiss = { card, articleId, grid, nextSibling };
     showToast();
+    // Auto-hide toast after 4s (no DB action needed — already committed)
+    undoTimeout = setTimeout(hideToastAndClear, 4000);
   }
 
   // Patch dismiss buttons (override rating.js which also handles dismiss)
@@ -272,6 +295,21 @@
       fresh.addEventListener('click', () => {
         const card = fresh.closest('.article-card');
         if (card) dismissCard(card);
+      });
+    });
+  });
+
+  // ---- Restore dismissed (dismissed tab) ----
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.restore-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const card = btn.closest('.article-card');
+        try {
+          await fetch(`/restore/${card.dataset.articleId}`, { method: 'POST' });
+        } catch (err) {
+          console.error('Restore error:', err);
+        }
+        card.remove();
       });
     });
   });
