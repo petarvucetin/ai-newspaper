@@ -11,7 +11,9 @@
   <header class="masthead">
     <div class="masthead-inner">
       <div class="masthead-meta">
-        <span class="edition">Daily Edition &mdash; {{ edition_date if edition_date is defined and edition_date else '' }}</span>
+        <span class="edition">Daily Edition &mdash; <span id="last-fetched"
+          {% if last_fetched_utc is defined and last_fetched_utc %}data-utc="{{ last_fetched_utc }}"{% endif %}
+        ></span></span>
       </div>
       <h1 class="paper-title">The AI Intelligence</h1>
       <div class="masthead-links">
@@ -35,5 +37,15 @@
   </footer>
 
   {% block scripts %}{% endblock %}
+  <script>
+    const el = document.getElementById('last-fetched');
+    if (el && el.dataset.utc) {
+      const dt = new Date(el.dataset.utc.replace(' ', 'T') + 'Z');
+      el.textContent = dt.toLocaleString([], {
+        weekday: 'long', year: 'numeric', month: 'long',
+        day: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+    }
+  </script>
 </body>
 </html>

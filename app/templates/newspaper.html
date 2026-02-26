@@ -10,7 +10,7 @@
 {% endmacro %}
 
 {% macro star_widget(article_id, user_rating) %}
-<div class="star-widget" data-article-id="{{ article_id }}">
+<div class="star-widget {% if user_rating %}rated{% endif %}" data-article-id="{{ article_id }}">
   {% for i in range(1, 6) %}
   <span class="star {% if user_rating and i <= user_rating %}filled{% endif %}"
         data-value="{{ i }}"
@@ -26,10 +26,18 @@
   {%- endif -%}
 {% endmacro %}
 
-{% macro fmt_date(dt) %}
-  {%- if dt -%}
-    {%- set parts = dt[:16] -%}{{ parts }}
+{% macro score_bar(score) %}
+  {%- set pct = [(score * 100)|int, 100]|min -%}
+  {%- if pct >= 70 -%}{%- set cls = 'high' -%}
+  {%- elif pct >= 40 -%}{%- set cls = 'mid' -%}
+  {%- else -%}{%- set cls = '' -%}
   {%- endif -%}
+<div class="score-bar-wrap" title="Relevancy score: {{ "%.2f"|format(score) }}">
+  <div class="score-bar">
+    <div class="score-fill {{ cls }}" style="width:{{ pct }}%"></div>
+  </div>
+  <span class="score-label">{{ "%.0f"|format(pct) }}%</span>
+</div>
 {% endmacro %}
 
 {% block title %}The AI Intelligence — Daily Edition{% endblock %}
@@ -43,7 +51,8 @@
 {% else %}
 <div class="newspaper-grid">
   {% for article in articles %}
-  <article class="article-card {% if loop.index == 1 %}featured{% endif %} src-{{ article.source_type }}">
+  <article class="article-card {% if loop.index == 1 %}featured{% endif %} src-{{ article.source_type }}"
+           data-article-id="{{ article.id }}">
     <div class="article-body">
       <div class="article-meta-top">
         {{ source_badge(article.source_type, article.source_name) }}
@@ -60,9 +69,13 @@
           {% endif %}
         {% endif %}
         {% if article.published_at %}
-        <span class="pub-time" data-pub="{{ article.published_at }}" title="{{ article.published_at }}">{{ article.published_at[:16] }}</span>
+        <span class="pub-time" data-pub="{{ article.published_at }}" data-iso="{{ article.published_at }}">{{ article.published_at[:16] }}</span>
         {% endif %}
       </div>
+
+      {% if article.relevancy_score is not none and article.relevancy_score > 0 %}
+      {{ score_bar(article.relevancy_score) }}
+      {% endif %}
 
       <h2 class="article-title">
         <a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.title }}</a>
@@ -82,6 +95,7 @@
         </div>
         <div class="article-actions">
           {{ star_widget(article.id, article.user_rating) }}
+          <button class="bookmark-btn" data-article-id="{{ article.id }}" title="Bookmark">&#9711;</button>
           <button class="dismiss-btn" data-article-id="{{ article.id }}" title="Dismiss article">✕</button>
         </div>
       </div>
@@ -90,13 +104,24 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<!-- Undo toast -->
+<div id="undo-toast">
+  Article dismissed
+  <button id="undo-btn">Undo</button>
+</div>
+
+<!-- Keyboard hint -->
+<div id="kbd-hint">
+  <kbd>j</kbd>/<kbd>k</kbd> navigate &nbsp; <kbd>Enter</kbd> open &nbsp; <kbd>d</kbd> dismiss &nbsp; <kbd>b</kbd> bookmark &nbsp; <kbd>?</kbd> hide
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script src="/static/rating.js"></script>
 <script>
+  // ---- Relative timestamps ----
   function fmtPubTime(utcStr) {
-    // utcStr is "YYYY-MM-DD HH:MM:SS" stored as UTC
     const dt = new Date(utcStr.replace(' ', 'T') + 'Z');
     const now = new Date();
     const diffMs = now - dt;
@@ -108,8 +133,185 @@
            ' ' + dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
+  function fmtTooltip(utcStr) {
+    const dt = new Date(utcStr.replace(' ', 'T') + 'Z');
+    return dt.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  }
+
   document.querySelectorAll('.pub-time[data-pub]').forEach(el => {
     el.textContent = fmtPubTime(el.dataset.pub);
+    el.title = fmtTooltip(el.dataset.pub);
+  });
+
+  // ---- Bookmarks (localStorage) ----
+  const BOOKMARK_KEY = 'ai-news-bookmarks';
+
+  function getBookmarks() {
+    try { return new Set(JSON.parse(localStorage.getItem(BOOKMARK_KEY) || '[]')); }
+    catch { return new Set(); }
+  }
+
+  function saveBookmarks(set) {
+    localStorage.setItem(BOOKMARK_KEY, JSON.stringify([...set]));
+  }
+
+  const bookmarks = getBookmarks();
+
+  document.querySelectorAll('.bookmark-btn').forEach(btn => {
+    const id = btn.dataset.articleId;
+    const card = btn.closest('.article-card');
+    if (bookmarks.has(id)) {
+      btn.textContent = '★';
+      btn.classList.add('active');
+      card.classList.add('bookmarked');
+    } else {
+      btn.textContent = '☆';
+    }
+    btn.addEventListener('click', () => {
+      if (bookmarks.has(id)) {
+        bookmarks.delete(id);
+        btn.textContent = '☆';
+        btn.classList.remove('active');
+        card.classList.remove('bookmarked');
+      } else {
+        bookmarks.add(id);
+        btn.textContent = '★';
+        btn.classList.add('active');
+        card.classList.add('bookmarked');
+      }
+      saveBookmarks(bookmarks);
+    });
+  });
+
+  // ---- Undo dismiss ----
+  let undoTimeout = null;
+  let pendingDismiss = null; // { card, articleId, placeholder }
+
+  const toast = document.getElementById('undo-toast');
+  const undoBtn = document.getElementById('undo-btn');
+
+  function showToast() {
+    toast.classList.add('visible');
+    clearTimeout(undoTimeout);
+    undoTimeout = setTimeout(commitDismiss, 4000);
+  }
+
+  function hideToast() {
+    toast.classList.remove('visible');
+    clearTimeout(undoTimeout);
+  }
+
+  async function commitDismiss() {
+    hideToast();
+    if (!pendingDismiss) return;
+    const { articleId, placeholder } = pendingDismiss;
+    pendingDismiss = null;
+    placeholder.remove();
+    try {
+      await fetch(`/dismiss/${articleId}`, { method: 'DELETE' });
+    } catch (err) {
+      console.error('Dismiss error:', err);
+    }
+  }
+
+  undoBtn.addEventListener('click', () => {
+    if (!pendingDismiss) return;
+    const { card, placeholder } = pendingDismiss;
+    pendingDismiss = null;
+    hideToast();
+    // Restore card in place of placeholder
+    placeholder.replaceWith(card);
+    card.style.opacity = '1';
+    card.style.transform = '';
+  });
+
+  function dismissCard(card) {
+    const articleId = card.dataset.articleId;
+    // If there was a previous pending dismiss, commit it immediately
+    if (pendingDismiss) commitDismiss();
+
+    // Create invisible placeholder to preserve grid layout during undo window
+    const placeholder = document.createElement('div');
+    placeholder.style.cssText = `grid-column: ${getComputedStyle(card).gridColumn}; visibility: hidden;`;
+    card.parentNode.insertBefore(placeholder, card);
+
+    card.style.transition = 'opacity 0.2s, transform 0.2s';
+    card.style.opacity = '0';
+    card.style.transform = 'scale(0.97)';
+
+    // Detach card from DOM but keep reference
+    setTimeout(() => card.remove(), 200);
+
+    pendingDismiss = { card, articleId, placeholder };
+    showToast();
+  }
+
+  // Patch dismiss buttons (override rating.js which also handles dismiss)
+  // rating.js runs first via DOMContentLoaded; we re-attach here after it runs.
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.dismiss-btn').forEach(btn => {
+      // Clone to remove the old listener added by rating.js
+      const fresh = btn.cloneNode(true);
+      btn.replaceWith(fresh);
+      fresh.addEventListener('click', () => {
+        const card = fresh.closest('.article-card');
+        if (card) dismissCard(card);
+      });
+    });
+  });
+
+  // ---- Keyboard navigation ----
+  const kbdHint = document.getElementById('kbd-hint');
+  let kbdActive = false;
+  let kbIdx = -1;
+
+  function getCards() {
+    return [...document.querySelectorAll('.article-card')];
+  }
+
+  function focusCard(idx) {
+    const cards = getCards();
+    if (cards.length === 0) return;
+    kbIdx = Math.max(0, Math.min(idx, cards.length - 1));
+    cards.forEach((c, i) => c.classList.toggle('kb-focus', i === kbIdx));
+    cards[kbIdx].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  document.addEventListener('keydown', e => {
+    // Ignore when typing in inputs
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+    if (e.key === '?') {
+      kbdHint.classList.toggle('visible');
+      return;
+    }
+
+    if (e.key === 'j' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      kbdActive = true;
+      focusCard(kbIdx < 0 ? 0 : kbIdx + 1);
+    } else if (e.key === 'k' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      kbdActive = true;
+      focusCard(kbIdx <= 0 ? 0 : kbIdx - 1);
+    } else if (e.key === 'Enter' && kbIdx >= 0) {
+      const cards = getCards();
+      if (cards[kbIdx]) {
+        const link = cards[kbIdx].querySelector('.article-title a');
+        if (link) window.open(link.href, '_blank', 'noopener');
+      }
+    } else if (e.key === 'd' && kbIdx >= 0) {
+      const cards = getCards();
+      if (cards[kbIdx]) {
+        dismissCard(cards[kbIdx]);
+        focusCard(kbIdx); // focus next card that's now at same index
+      }
+    } else if (e.key === 'b' && kbIdx >= 0) {
+      const cards = getCards();
+      if (cards[kbIdx]) {
+        cards[kbIdx].querySelector('.bookmark-btn')?.click();
+      }
+    }
   });
 </script>
 {% endblock %}
