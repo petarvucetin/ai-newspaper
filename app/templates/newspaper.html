@@ -185,7 +185,7 @@
 
   // ---- Undo dismiss ----
   let undoTimeout = null;
-  let pendingDismiss = null; // { card, articleId, placeholder }
+  let pendingDismiss = null; // { card, articleId, grid, nextSibling }
 
   const toast = document.getElementById('undo-toast');
   const undoBtn = document.getElementById('undo-btn');
@@ -204,9 +204,8 @@
   async function commitDismiss() {
     hideToast();
     if (!pendingDismiss) return;
-    const { articleId, placeholder } = pendingDismiss;
+    const { articleId } = pendingDismiss;
     pendingDismiss = null;
-    placeholder.remove();
     try {
       await fetch(`/dismiss/${articleId}`, { method: 'DELETE' });
     } catch (err) {
@@ -216,33 +215,32 @@
 
   undoBtn.addEventListener('click', () => {
     if (!pendingDismiss) return;
-    const { card, placeholder } = pendingDismiss;
+    const { card, grid, nextSibling } = pendingDismiss;
     pendingDismiss = null;
     hideToast();
-    // Restore card in place of placeholder
-    placeholder.replaceWith(card);
+    // Re-insert card at its original position
+    grid.insertBefore(card, nextSibling);
+    card.style.transition = 'opacity 0.2s, transform 0.2s';
     card.style.opacity = '1';
     card.style.transform = '';
   });
 
   function dismissCard(card) {
     const articleId = card.dataset.articleId;
-    // If there was a previous pending dismiss, commit it immediately
+    // Commit any prior pending dismiss immediately
     if (pendingDismiss) commitDismiss();
 
-    // Create invisible placeholder to preserve grid layout during undo window
-    const placeholder = document.createElement('div');
-    placeholder.style.cssText = `grid-column: ${getComputedStyle(card).gridColumn}; visibility: hidden;`;
-    card.parentNode.insertBefore(placeholder, card);
+    const grid = card.parentNode;
+    const nextSibling = card.nextSibling;
 
-    card.style.transition = 'opacity 0.2s, transform 0.2s';
+    card.style.transition = 'opacity 0.15s, transform 0.15s';
     card.style.opacity = '0';
     card.style.transform = 'scale(0.97)';
 
-    // Detach card from DOM but keep reference
-    setTimeout(() => card.remove(), 200);
+    // Remove card after fade — grid reflows immediately
+    setTimeout(() => card.remove(), 150);
 
-    pendingDismiss = { card, articleId, placeholder };
+    pendingDismiss = { card, articleId, grid, nextSibling };
     showToast();
   }
 
