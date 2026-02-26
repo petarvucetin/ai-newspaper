@@ -4,6 +4,7 @@
    =========================== */
 
 :root {
+  --article-font-size: 16px;
   --cream: #f5f0e8;
   --cream-dark: #ede7d5;
   --ink: #1a1a1a;
@@ -114,6 +115,30 @@ body {
   font-weight: 600;
 }
 
+.font-size-ctrl {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+}
+
+.font-size-ctrl button {
+  background: none;
+  border: 1px solid var(--rule);
+  color: var(--ink-light);
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.35rem;
+  border-radius: 2px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background 0.15s, color 0.15s;
+}
+.font-size-ctrl button:hover {
+  background: var(--ink);
+  color: var(--cream);
+}
+
 .filter-nav {
   display: flex;
   gap: 0;
@@ -152,29 +177,6 @@ main {
   align-items: start;
 }
 
-/* Featured article spans full width */
-.article-card.featured {
-  grid-column: 1 / -1;
-  background: var(--cream);
-  padding: 1.25rem;
-  border-bottom: 3px double var(--rule);
-}
-
-.article-card.featured .article-title {
-  font-size: 1.9rem;
-  line-height: 1.2;
-}
-
-.article-card.featured .article-meta-top {
-  font-size: 0.85rem;
-  margin-bottom: 0.25rem;
-}
-
-.article-card.featured .article-summary {
-  -webkit-line-clamp: 4;
-  font-size: 0.95rem;
-}
-
 /* Standard card */
 .article-card {
   background: var(--cream);
@@ -182,6 +184,8 @@ main {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  height: 380px;
+  overflow: hidden;
 }
 
 /* Bookmarked card highlight */
@@ -194,6 +198,15 @@ main {
   flex-direction: column;
   gap: 0.4rem;
   flex: 1;
+  overflow: hidden;
+}
+
+.article-scroll {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .article-meta-top {
@@ -282,7 +295,7 @@ main {
 /* ---- Article title & links ---- */
 .article-title {
   font-family: var(--font-serif);
-  font-size: 1.05rem;
+  font-size: var(--article-font-size);
   font-weight: 700;
   line-height: 1.3;
   color: var(--ink);
@@ -295,7 +308,7 @@ main {
 .article-title a:visited { color: var(--ink-muted); }
 
 .article-summary {
-  font-size: 0.85rem;
+  font-size: calc(var(--article-font-size) * 0.85);
   color: var(--ink-light);
 }
 
@@ -354,6 +367,23 @@ main {
 }
 .bookmark-btn:hover { color: var(--star-on); transform: scale(1.2); }
 .bookmark-btn.active { color: var(--star-on); }
+
+/* ---- Remove source button ---- */
+.remove-source-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ink-muted);
+  font-size: 0.75rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: 2px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+.remove-source-btn:hover {
+  color: var(--accent);
+  background: var(--cream-dark);
+}
 
 /* ---- Dismiss button ---- */
 .dismiss-btn {

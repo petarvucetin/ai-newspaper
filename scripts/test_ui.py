@@ -215,6 +215,25 @@ def run_tests():
         results.append(("[11] align-items:start", "pass", "covered by test #2"))
         print(f"  {PASS} Covered by test #2")
 
+        # ── Source interleaving ────────────────────────────────────────────────
+        print("\n[+] Source interleaving on All Sources view")
+        page.goto(BASE + "/?source=all", wait_until="networkidle")
+        if page.locator(".article-card").count() >= 3:
+            check("first 9 cards contain at least 2 distinct source types",
+                  lambda: _assert(
+                      lambda: _count_distinct_sources(page, 9) >= 2,
+                      "First 9 cards all from same source — no interleaving"
+                  ))
+            check("no source appears in 3 consecutive cards",
+                  lambda: _assert(
+                      lambda: not _has_three_consecutive_same_source(page),
+                      "A source appears 3+ times consecutively"
+                  ))
+        else:
+            _skip("[+] Not enough articles to test interleaving")
+        # Restore all-sources page for subsequent tests
+        page.goto(BASE, wait_until="networkidle")
+
         # ── Last-fetched local time ────────────────────────────────────────────
         print("\n[+] Last-fetched time in browser local time")
         check("#last-fetched span is populated by JS",
@@ -265,6 +284,30 @@ def _assert(condition_fn, message):
 def _skip(label):
     print(f"  {SKIP} {label} (skipped — no data)")
     results.append((label, "skip", None))
+
+def _count_distinct_sources(page, n):
+    cards = page.locator(".article-card").all()[:n]
+    sources = set()
+    for card in cards:
+        cls = card.get_attribute("class") or ""
+        for s in ("src-youtube", "src-reddit", "src-hackernews"):
+            if s in cls:
+                sources.add(s)
+    return len(sources)
+
+def _has_three_consecutive_same_source(page):
+    cards = page.locator(".article-card").all()
+    sources = []
+    for card in cards:
+        cls = card.get_attribute("class") or ""
+        for s in ("src-youtube", "src-youtube_channel", "src-reddit", "src-hackernews"):
+            if s in cls:
+                sources.append(s)
+                break
+    for i in range(len(sources) - 2):
+        if sources[i] == sources[i+1] == sources[i+2]:
+            return True
+    return False
 
 def _looks_like_raw_utc(text):
     """Return True if text matches 'YYYY-MM-DD HH:MM' raw UTC pattern."""

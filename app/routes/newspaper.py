@@ -21,7 +21,7 @@ async def newspaper(
     request: Request,
     source: str = Query(default="all"),
 ):
-    source_type = None if source == "all" else source
+    source_type = None if source in ("all", "bookmarks") else source
     articles = get_articles(limit=100, source_type=source_type)
     return templates.TemplateResponse(
         "newspaper.html",

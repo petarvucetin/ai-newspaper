@@ -236,21 +236,55 @@ def get_articles(limit: int = 100, source_type: str | None = None) -> list[sqlit
                 (source_type, limit),
             ).fetchall()
         else:
-            rows = con.execute(
+            # Fetch each source group sorted by its own metric, then interleave
+            yt = con.execute(
                 """SELECT a.*, s.name AS source_name, s.source_type,
                           (SELECT score FROM ratings WHERE article_id = a.id ORDER BY rated_at DESC LIMIT 1) AS user_rating
                    FROM articles a JOIN sources s ON a.source_id = s.id
-                   WHERE COALESCE(a.dismissed, 0) = 0
-                   ORDER BY
-                     CASE WHEN s.source_type IN ('youtube', 'youtube_channel')
-                          THEN a.upvotes ELSE 0 END DESC,
-                     CASE WHEN s.source_type NOT IN ('youtube', 'youtube_channel')
-                          THEN a.display_score ELSE 0 END DESC,
-                     a.fetched_at DESC
-                   LIMIT ?""",
+                   WHERE s.source_type IN ('youtube', 'youtube_channel')
+                     AND COALESCE(a.dismissed, 0) = 0
+                   ORDER BY a.upvotes DESC, a.fetched_at DESC LIMIT ?""",
                 (limit,),
             ).fetchall()
+            rd = con.execute(
+                """SELECT a.*, s.name AS source_name, s.source_type,
+                          (SELECT score FROM ratings WHERE article_id = a.id ORDER BY rated_at DESC LIMIT 1) AS user_rating
+                   FROM articles a JOIN sources s ON a.source_id = s.id
+                   WHERE s.source_type = 'reddit'
+                     AND COALESCE(a.dismissed, 0) = 0
+                   ORDER BY a.upvotes DESC, a.fetched_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            hn = con.execute(
+                """SELECT a.*, s.name AS source_name, s.source_type,
+                          (SELECT score FROM ratings WHERE article_id = a.id ORDER BY rated_at DESC LIMIT 1) AS user_rating
+                   FROM articles a JOIN sources s ON a.source_id = s.id
+                   WHERE s.source_type = 'hackernews'
+                     AND COALESCE(a.dismissed, 0) = 0
+                   ORDER BY a.display_score DESC, a.fetched_at DESC LIMIT ?""",
+                (limit,),
+            ).fetchall()
+            rows = _interleave([yt, rd, hn], limit)
     return rows
+
+
+def _interleave(groups: list, limit: int) -> list:
+    """Round-robin interleave multiple ranked lists, skipping exhausted groups."""
+    iters = [iter(g) for g in groups if g]
+    result = []
+    while iters and len(result) < limit:
+        exhausted = []
+        for it in iters:
+            item = next(it, None)
+            if item is None:
+                exhausted.append(it)
+            else:
+                result.append(item)
+                if len(result) >= limit:
+                    break
+        for it in exhausted:
+            iters.remove(it)
+    return result
 
 
 def get_article_by_id(article_id: int) -> sqlite3.Row | None:

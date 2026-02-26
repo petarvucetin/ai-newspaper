@@ -51,8 +51,10 @@
 {% else %}
 <div class="newspaper-grid">
   {% for article in articles %}
-  <article class="article-card {% if loop.index == 1 %}featured{% endif %} src-{{ article.source_type }}"
-           data-article-id="{{ article.id }}">
+  <article class="article-card src-{{ article.source_type }}"
+           data-article-id="{{ article.id }}"
+           data-source-id="{{ article.source_id }}"
+           data-source-name="{{ article.source_name }}">
     <div class="article-body">
       <div class="article-meta-top">
         {{ source_badge(article.source_type, article.source_name) }}
@@ -73,21 +75,23 @@
         {% endif %}
       </div>
 
-      {% if article.relevancy_score is not none and article.relevancy_score > 0 %}
-      {{ score_bar(article.relevancy_score) }}
-      {% endif %}
+      <div class="article-scroll">
+        {% if article.relevancy_score is not none and article.relevancy_score > 0 %}
+        {{ score_bar(article.relevancy_score) }}
+        {% endif %}
 
-      <h2 class="article-title">
-        <a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.title }}</a>
-      </h2>
+        <h2 class="article-title">
+          <a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.title }}</a>
+        </h2>
 
-      {% if article.summary %}
-      <div class="article-summary">
-        {% for para in article.summary.split('\n\n') %}
-          {% if para.strip() %}<p>{{ para.strip() }}</p>{% endif %}
-        {% endfor %}
+        {% if article.summary %}
+        <div class="article-summary">
+          {% for para in article.summary.split('\n\n') %}
+            {% if para.strip() %}<p>{{ para.strip() }}</p>{% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
-      {% endif %}
 
       <div class="article-footer">
         <div class="article-byline">
@@ -97,6 +101,9 @@
           {{ star_widget(article.id, article.user_rating) }}
           <button class="bookmark-btn" data-article-id="{{ article.id }}" title="Bookmark">&#9711;</button>
           <button class="dismiss-btn" data-article-id="{{ article.id }}" title="Dismiss article">✕</button>
+          {% if article.source_type in ('reddit', 'youtube_channel', 'youtube') %}
+          <button class="remove-source-btn" title="Remove source: {{ article.source_name }}">&#128683;</button>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -156,6 +163,17 @@
   }
 
   const bookmarks = getBookmarks();
+
+  // ---- Bookmarks tab filter ----
+  {% if active_filter == 'bookmarks' %}
+  document.querySelectorAll('.article-card').forEach(card => {
+    if (!bookmarks.has(card.dataset.articleId)) card.style.display = 'none';
+  });
+  const _grid = document.querySelector('.newspaper-grid');
+  if (_grid && ![..._grid.querySelectorAll('.article-card')].some(c => c.style.display !== 'none')) {
+    _grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><h2>No bookmarks yet</h2><p>Click ☆ on any article to save it here.</p></div>';
+  }
+  {% endif %}
 
   document.querySelectorAll('.bookmark-btn').forEach(btn => {
     const id = btn.dataset.articleId;
@@ -254,6 +272,25 @@
       fresh.addEventListener('click', () => {
         const card = fresh.closest('.article-card');
         if (card) dismissCard(card);
+      });
+    });
+  });
+
+  // ---- Remove source ----
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.remove-source-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const card = btn.closest('.article-card');
+        const sourceId = card.dataset.sourceId;
+        const sourceName = card.dataset.sourceName;
+        if (!confirm(`Remove source "${sourceName}" and hide all its articles?`)) return;
+        try {
+          await fetch(`/source/${sourceId}`, { method: 'DELETE' });
+        } catch (err) {
+          console.error('Remove source error:', err);
+        }
+        // Hide all cards from this source
+        document.querySelectorAll(`.article-card[data-source-id="${sourceId}"]`).forEach(c => c.remove());
       });
     });
   });
