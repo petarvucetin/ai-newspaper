@@ -3,11 +3,12 @@ from pathlib import Path
 import logging
 
 from fastapi import FastAPI
+
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db, seed_keywords, seed_sources
 from app import config
-from app.routes import newspaper, rating, admin, dismiss
+from app.routes import newspaper, rating, admin, dismiss, api
 from app.scheduler import setup_scheduler
 
 logging.basicConfig(
@@ -46,3 +47,4 @@ app.include_router(newspaper.router)
 app.include_router(rating.router)
 app.include_router(admin.router)
 app.include_router(dismiss.router)
+app.include_router(api.router)
