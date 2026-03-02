@@ -1,19 +1,15 @@
 import secrets
 from datetime import datetime, timezone
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, UploadFile, File
-from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pathlib import Path
 from app import config
 from app.database import (
-    get_sources, get_keyword_weights, get_youtube_channels, get_reddit_sources,
+    get_youtube_channels, get_reddit_sources,
     add_youtube_channel, add_reddit_subreddit, db_conn, get_setting, set_setting,
     add_keyword_weight, delete_keyword_weight, add_source, delete_source,
-    get_api_usage_summary,
 )
-
-from app import __version__
 
 _COOKIES_PATH = Path(__file__).parent.parent.parent / "youtube_cookies.txt"
 
@@ -37,8 +33,6 @@ def _last_fetched() -> str | None:
     return row["ts"] if row else None
 
 router = APIRouter()
-templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
-templates.env.globals["app_version"] = __version__
 security = HTTPBasic()
 
 
@@ -54,35 +48,6 @@ def require_admin(credentials: HTTPBasicCredentials = Depends(security)):
             headers={"WWW-Authenticate": "Basic"},
         )
     return credentials.username
-
-
-@router.get("/admin", response_class=HTMLResponse)
-async def admin_get(request: Request, _: str = Depends(require_admin), msg: str = ""):
-    all_sources = get_sources()
-    sources = [s for s in all_sources if s["source_type"] not in ("youtube_channel", "reddit")]
-    channels = get_youtube_channels()
-    reddit_sources = get_reddit_sources()
-    keywords = get_keyword_weights()
-    from app import config
-    default_time = config.get("schedule.fetch_time", "07:00")
-    schedule_time = get_setting("schedule.fetch_time", default_time)
-    auto_enabled = get_setting("schedule.auto_enabled", "1") == "1"
-    return templates.TemplateResponse(
-        "admin.html",
-        {
-            "request": request,
-            "sources": sources,
-            "channels": channels,
-            "reddit_sources": reddit_sources,
-            "keywords": keywords,
-            "msg": msg,
-            "last_fetched": _last_fetched(),
-            "schedule_time": schedule_time,
-            "auto_enabled": auto_enabled,
-            "cookies_status": _cookies_status(),
-            "api_usage": get_api_usage_summary(),
-        },
-    )
 
 
 @router.post("/admin/source/{source_id}/weight")
@@ -172,31 +137,28 @@ async def update_schedule(
     from app.scheduler import reschedule
     enabled = auto_enabled == "1"
     reschedule(request.app, fetch_time, enabled)
-    status = "enabled" if enabled else "disabled"
-    return RedirectResponse(f"/admin?msg=Schedule+updated+to+{fetch_time}+({status})", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/channel/add")
 async def add_channel(channel: str = Form(...), _: str = Depends(require_admin)):
     handle = channel.strip()
     added = add_youtube_channel(handle)
-    msg = f"Added {handle}" if added else f"{handle} already exists"
-    return RedirectResponse(f"/admin?msg={msg}", status_code=303)
+    return {"ok": True, "added": added}
 
 
 @router.post("/admin/reddit/add")
 async def add_subreddit(subreddit: str = Form(...), _: str = Depends(require_admin)):
     name = subreddit.strip()
     added = add_reddit_subreddit(name)
-    msg = f"Added r/{name.lstrip('r/').lstrip('/')}" if added else f"r/{name.lstrip('r/').lstrip('/')} already exists"
-    return RedirectResponse(f"/admin?msg={msg}", status_code=303)
+    return {"ok": True, "added": added}
 
 
 @router.post("/admin/reddit/{source_id}/toggle")
 async def toggle_reddit(source_id: int, _: str = Depends(require_admin)):
     with db_conn() as con:
         con.execute("UPDATE sources SET enabled = NOT enabled WHERE id = ? AND source_type = 'reddit'", (source_id,))
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/reddit/{source_id}/delete")
@@ -207,7 +169,7 @@ async def delete_reddit(source_id: int, _: str = Depends(require_admin)):
             "UPDATE sources SET blocked = 1, enabled = 0 WHERE id = ? AND source_type = 'reddit'",
             (source_id,),
         )
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/keyword/add")
@@ -218,14 +180,13 @@ async def add_keyword(
 ):
     keyword = keyword.strip()
     added = add_keyword_weight(keyword, weight)
-    msg = f"Added keyword '{keyword}'" if added else f"Keyword '{keyword}' already exists"
-    return RedirectResponse(f"/admin?msg={msg}", status_code=303)
+    return {"ok": True, "added": added}
 
 
 @router.post("/admin/keyword/{keyword_id}/delete")
 async def delete_keyword(keyword_id: int, _: str = Depends(require_admin)):
     delete_keyword_weight(keyword_id)
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/source/add")
@@ -237,14 +198,13 @@ async def add_source_route(
     _: str = Depends(require_admin),
 ):
     added = add_source(name, source_type, identifier, weight)
-    msg = f"Added source '{name}'" if added else f"Source '{name}' already exists"
-    return RedirectResponse(f"/admin?msg={msg}", status_code=303)
+    return {"ok": True, "added": added}
 
 
 @router.post("/admin/source/{source_id}/delete")
 async def delete_source_route(source_id: int, _: str = Depends(require_admin)):
     delete_source(source_id)
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/cookies/upload")
@@ -254,7 +214,7 @@ async def upload_cookies(
 ):
     raw = await cookies_file.read()
     if not raw.strip():
-        return RedirectResponse("/admin?msg=Cookies+file+is+empty", status_code=303)
+        return {"ok": False, "error": "Cookies file is empty"}
     # Decode robustly — handles UTF-16 (with BOM) that some browsers produce
     for enc in ("utf-8-sig", "utf-16", "utf-8", "latin-1"):
         try:
@@ -263,17 +223,17 @@ async def upload_cookies(
         except (UnicodeDecodeError, Exception):
             continue
     else:
-        return RedirectResponse("/admin?msg=Could+not+decode+cookies+file", status_code=303)
+        return {"ok": False, "error": "Could not decode cookies file"}
     # Re-encode as plain UTF-8 (what yt-dlp expects)
     _COOKIES_PATH.write_text(content, encoding="utf-8")
-    return RedirectResponse("/admin?msg=YouTube+cookies+updated+successfully", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/cookies/delete")
 async def delete_cookies(_: str = Depends(require_admin)):
     if _COOKIES_PATH.exists():
         _COOKIES_PATH.unlink()
-    return RedirectResponse("/admin?msg=YouTube+cookies+removed", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/fetch-now")
