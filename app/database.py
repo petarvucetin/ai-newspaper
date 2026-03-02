@@ -93,6 +93,21 @@ def init_db() -> None:
         src_cols = {row[1] for row in con.execute("PRAGMA table_info(sources)")}
         if "blocked" not in src_cols:
             con.execute("ALTER TABLE sources ADD COLUMN blocked BOOLEAN DEFAULT 0")
+        # article_comments table
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS article_comments (
+                id INTEGER PRIMARY KEY,
+                article_id INTEGER REFERENCES articles(id) ON DELETE CASCADE,
+                author TEXT DEFAULT '',
+                body TEXT DEFAULT '',
+                score INTEGER DEFAULT 0,
+                comment_url TEXT DEFAULT '',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        con.execute(
+            "CREATE INDEX IF NOT EXISTS idx_comments_article ON article_comments(article_id)"
+        )
     print(f"Database initialized at {DB_PATH}")
 
 
@@ -557,3 +572,55 @@ def auto_dismiss_articles(article_ids: list[int]) -> int:
             article_ids,
         )
         return cur.rowcount
+
+
+def insert_comments(article_id: int, comments: list[dict]) -> int:
+    """Insert top comments for an article. Returns count inserted."""
+    if not comments:
+        return 0
+    with db_conn() as con:
+        for c in comments:
+            con.execute(
+                """INSERT INTO article_comments (article_id, author, body, score, comment_url)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (article_id, c.get("author", ""), c.get("body", ""),
+                 c.get("score", 0), c.get("comment_url", "")),
+            )
+    return len(comments)
+
+
+def get_comments_for_articles(article_ids: list[int]) -> dict[int, list[dict]]:
+    """Get comments grouped by article ID."""
+    if not article_ids:
+        return {}
+    with db_conn() as con:
+        placeholders = ",".join("?" * len(article_ids))
+        rows = con.execute(
+            f"""SELECT article_id, author, body, score, comment_url
+                FROM article_comments
+                WHERE article_id IN ({placeholders})
+                ORDER BY score DESC""",
+            article_ids,
+        ).fetchall()
+    result: dict[int, list[dict]] = {}
+    for r in rows:
+        aid = r["article_id"]
+        result.setdefault(aid, []).append(dict(r))
+    return result
+
+
+def get_articles_needing_comments() -> list[dict]:
+    """Get recently fetched articles that don't have comments yet."""
+    with db_conn() as con:
+        rows = con.execute(
+            """SELECT a.id, a.external_id, a.title, a.summary,
+                      s.source_type, s.identifier
+               FROM articles a
+               JOIN sources s ON a.source_id = s.id
+               WHERE a.fetched_at >= datetime('now', '-2 hours')
+                 AND COALESCE(a.dismissed, 0) = 0
+                 AND s.source_type IN ('reddit', 'hackernews', 'youtube', 'youtube_channel')
+                 AND a.id NOT IN (SELECT DISTINCT article_id FROM article_comments)
+               ORDER BY a.id""",
+        ).fetchall()
+    return [dict(r) for r in rows]

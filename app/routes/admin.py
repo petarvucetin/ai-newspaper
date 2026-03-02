@@ -13,6 +13,8 @@ from app.database import (
     get_api_usage_summary,
 )
 
+from app import __version__
+
 _COOKIES_PATH = Path(__file__).parent.parent.parent / "youtube_cookies.txt"
 
 
@@ -36,6 +38,7 @@ def _last_fetched() -> str | None:
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
+templates.env.globals["app_version"] = __version__
 security = HTTPBasic()
 
 
@@ -115,6 +118,23 @@ async def update_keyword_weight(
     return RedirectResponse("/admin", status_code=303)
 
 
+@router.post("/admin/weights/save")
+async def bulk_save_weights(request: Request, _: str = Depends(require_admin)):
+    """Save all source and keyword weights in one request."""
+    body = await request.json()
+    updated = 0
+    with db_conn() as con:
+        for item in body.get("sources", []):
+            w = max(0.1, min(3.0, float(item["weight"])))
+            con.execute("UPDATE sources SET weight = ? WHERE id = ?", (w, int(item["id"])))
+            updated += 1
+        for item in body.get("keywords", []):
+            w = max(0.1, min(5.0, float(item["weight"])))
+            con.execute("UPDATE keyword_weights SET weight = ? WHERE id = ?", (w, int(item["id"])))
+            updated += 1
+    return {"ok": True, "updated": updated}
+
+
 @router.post("/admin/channel/{source_id}/pin")
 async def pin_channel(source_id: int, _: str = Depends(require_admin)):
     """Enable (pin) a discovered channel so it's fetched directly."""
@@ -133,9 +153,12 @@ async def unpin_channel(source_id: int, _: str = Depends(require_admin)):
 
 @router.post("/admin/channel/{source_id}/delete")
 async def delete_channel(source_id: int, _: str = Depends(require_admin)):
-    """Remove a discovered channel record entirely."""
+    """Block a channel permanently so it never reappears."""
     with db_conn() as con:
-        con.execute("DELETE FROM sources WHERE id = ? AND source_type = 'youtube_channel'", (source_id,))
+        con.execute(
+            "UPDATE sources SET blocked = 1, enabled = 0 WHERE id = ? AND source_type = 'youtube_channel'",
+            (source_id,),
+        )
     return RedirectResponse("/admin", status_code=303)
 
 
@@ -178,8 +201,12 @@ async def toggle_reddit(source_id: int, _: str = Depends(require_admin)):
 
 @router.post("/admin/reddit/{source_id}/delete")
 async def delete_reddit(source_id: int, _: str = Depends(require_admin)):
+    """Block a subreddit permanently so it never reappears."""
     with db_conn() as con:
-        con.execute("DELETE FROM sources WHERE id = ? AND source_type = 'reddit'", (source_id,))
+        con.execute(
+            "UPDATE sources SET blocked = 1, enabled = 0 WHERE id = ? AND source_type = 'reddit'",
+            (source_id,),
+        )
     return RedirectResponse("/admin", status_code=303)
 
 

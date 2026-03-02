@@ -4,7 +4,7 @@ from fastapi import APIRouter, Request, Query
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
-from app.database import get_articles, get_dismissed_articles, db_conn
+from app.database import get_articles, get_dismissed_articles, get_comments_for_articles, db_conn
 
 from app import __version__
 
@@ -66,6 +66,17 @@ def _source_counts() -> dict[str, int]:
     return counts
 
 
+def _attach_comments(items: list[dict]) -> None:
+    """Attach comments to article dicts in-place."""
+    article_ids = [item["article"]["id"] for item in items if item.get("article")]
+    if not article_ids:
+        return
+    comments_map = get_comments_for_articles(article_ids)
+    for item in items:
+        aid = item["article"]["id"]
+        item["comments"] = comments_map.get(aid, [])
+
+
 @router.get("/", response_class=HTMLResponse)
 async def newspaper(
     request: Request,
@@ -79,6 +90,8 @@ async def newspaper(
         source_type = None if source in ("all", "bookmarks") else source
         articles = get_articles(limit=200, source_type=source_type)
         fresh, archive = _split_by_age(articles)
+    _attach_comments(fresh)
+    _attach_comments(archive)
     return templates.TemplateResponse(
         "newspaper.html",
         {
