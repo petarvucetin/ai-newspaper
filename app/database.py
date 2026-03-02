@@ -86,8 +86,13 @@ def init_db() -> None:
             con.execute("ALTER TABLE articles ADD COLUMN dismissed BOOLEAN DEFAULT 0")
         if "dismissed_at" not in cols:
             con.execute("ALTER TABLE articles ADD COLUMN dismissed_at DATETIME")
+        if "auto_dismissed" not in cols:
+            con.execute("ALTER TABLE articles ADD COLUMN auto_dismissed BOOLEAN DEFAULT 0")
         if "num_comments" not in cols:
             con.execute("ALTER TABLE articles ADD COLUMN num_comments INTEGER DEFAULT 0")
+        src_cols = {row[1] for row in con.execute("PRAGMA table_info(sources)")}
+        if "blocked" not in src_cols:
+            con.execute("ALTER TABLE sources ADD COLUMN blocked BOOLEAN DEFAULT 0")
     print(f"Database initialized at {DB_PATH}")
 
 
@@ -159,10 +164,17 @@ def register_discovered_channel(channel_handle: str, channel_name: str) -> int |
     Insert a newly discovered YouTube channel as disabled (pending review).
     Returns the source id if newly inserted, None if it already existed.
     Identifier is the @handle; name is the human-readable channel title.
+    Skips channels that have been blocked (removed by admin).
     """
     handle = channel_handle.lstrip("@")
     identifier = f"@{handle}"
     with db_conn() as con:
+        # Don't re-add channels that were blocked by admin
+        blocked = con.execute(
+            "SELECT 1 FROM sources WHERE identifier = ? AND blocked = 1", (identifier,)
+        ).fetchone()
+        if blocked:
+            return None
         cur = con.execute(
             """INSERT OR IGNORE INTO sources (name, source_type, identifier, enabled)
                VALUES (?, 'youtube_channel', ?, 0)""",
@@ -174,10 +186,15 @@ def register_discovered_channel(channel_handle: str, channel_name: str) -> int |
 
 
 def add_youtube_channel(handle: str) -> bool:
-    """Add a pinned YouTube channel. Returns True if newly inserted."""
+    """Add a pinned YouTube channel. Returns True if newly inserted. Refuses blocked channels."""
     handle = handle.strip().lstrip("@")
     identifier = f"@{handle}"
     with db_conn() as con:
+        blocked = con.execute(
+            "SELECT 1 FROM sources WHERE identifier = ? AND blocked = 1", (identifier,)
+        ).fetchone()
+        if blocked:
+            return False
         cur = con.execute(
             """INSERT OR IGNORE INTO sources (name, source_type, identifier, enabled)
                VALUES (?, 'youtube_channel', ?, 1)""",
@@ -187,9 +204,15 @@ def add_youtube_channel(handle: str) -> bool:
 
 
 def add_reddit_subreddit(subreddit: str) -> bool:
-    """Add a Reddit subreddit source. Returns True if newly inserted."""
+    """Add a Reddit subreddit source. Returns True if newly inserted. Refuses blocked."""
     name = subreddit.strip().lstrip("r/").lstrip("/")
     with db_conn() as con:
+        blocked = con.execute(
+            "SELECT 1 FROM sources WHERE identifier = ? AND source_type = 'reddit' AND blocked = 1",
+            (name,),
+        ).fetchone()
+        if blocked:
+            return False
         cur = con.execute(
             """INSERT OR IGNORE INTO sources (name, source_type, identifier, enabled)
                VALUES (?, 'reddit', ?, 1)""",
@@ -199,19 +222,30 @@ def add_reddit_subreddit(subreddit: str) -> bool:
 
 
 def get_reddit_sources() -> list[sqlite3.Row]:
-    """All Reddit subreddit sources."""
+    """All Reddit subreddit sources. Excludes blocked."""
     with db_conn() as con:
         return con.execute(
             """SELECT * FROM sources WHERE source_type = 'reddit'
+               AND COALESCE(blocked, 0) = 0
                ORDER BY enabled DESC, name""",
         ).fetchall()
 
 
+def get_all_youtube_channel_identifiers() -> set[str]:
+    """All youtube_channel identifiers including blocked (for dedup during fetch)."""
+    with db_conn() as con:
+        rows = con.execute(
+            "SELECT identifier FROM sources WHERE source_type = 'youtube_channel'"
+        ).fetchall()
+        return {row["identifier"] for row in rows}
+
+
 def get_youtube_channels() -> list[sqlite3.Row]:
-    """All youtube_channel sources, pinned (enabled) first."""
+    """All youtube_channel sources, pinned (enabled) first. Excludes blocked."""
     with db_conn() as con:
         return con.execute(
             """SELECT * FROM sources WHERE source_type = 'youtube_channel'
+               AND COALESCE(blocked, 0) = 0
                ORDER BY enabled DESC, name""",
         ).fetchall()
 
@@ -320,7 +354,9 @@ def get_existing_summary(external_id: str) -> str | None:
 
 def get_sources() -> list[sqlite3.Row]:
     with db_conn() as con:
-        return con.execute("SELECT * FROM sources ORDER BY source_type, name").fetchall()
+        return con.execute(
+            "SELECT * FROM sources WHERE COALESCE(blocked, 0) = 0 ORDER BY source_type, name"
+        ).fetchall()
 
 
 def get_keyword_weights() -> list[sqlite3.Row]:
@@ -493,3 +529,31 @@ def upsert_article(source_id: int, external_id: str, title: str, url: str,
                 (summary, source_id, external_id),
             )
         return False
+
+
+def get_dismissed_titles(days: int = 30) -> list[str]:
+    """Return titles of manually dismissed articles from the last N days."""
+    with db_conn() as con:
+        rows = con.execute(
+            """SELECT title FROM articles
+               WHERE dismissed = 1 AND COALESCE(auto_dismissed, 0) = 0
+                 AND dismissed_at >= datetime('now', ?)
+               ORDER BY dismissed_at DESC""",
+            (f"-{days} days",),
+        ).fetchall()
+    return [r["title"] for r in rows]
+
+
+def auto_dismiss_articles(article_ids: list[int]) -> int:
+    """Mark articles as auto-dismissed. Returns count updated."""
+    if not article_ids:
+        return 0
+    with db_conn() as con:
+        placeholders = ",".join("?" * len(article_ids))
+        cur = con.execute(
+            f"""UPDATE articles
+                SET dismissed = 1, auto_dismissed = 1, dismissed_at = CURRENT_TIMESTAMP
+                WHERE id IN ({placeholders}) AND COALESCE(dismissed, 0) = 0""",
+            article_ids,
+        )
+        return cur.rowcount
