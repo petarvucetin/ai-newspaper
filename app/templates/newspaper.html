@@ -40,7 +40,7 @@
 </div>
 {% endmacro %}
 
-{% macro article_card(article, is_old, active_filter) %}
+{% macro article_card(article, is_old, active_filter, comments=None) %}
   {%- set rscore = article.relevancy_score or 0 -%}
   {%- if rscore >= 0.7 -%}{%- set rel_cls = 'relevancy-high' -%}
   {%- elif rscore >= 0.4 -%}{%- set rel_cls = 'relevancy-mid' -%}
@@ -97,6 +97,20 @@
         <div class="article-summary">
           {% for para in article.summary.split('\n\n') %}
             {% if para.strip() %}<p>{{ para.strip() }}</p>{% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if comments %}
+        <div class="top-comments">
+          <span class="top-comments-label">Top comments</span>
+          {% for c in comments[:3] %}
+          <div class="comment-item">
+            <span class="comment-body">{{ c.body }}</span>
+            <span class="comment-meta">
+              &mdash; {{ c.author }}{% if c.comment_url %} <a href="{{ c.comment_url }}" target="_blank" rel="noopener" class="comment-link" title="View comment">&#8599;</a>{% endif %}
+            </span>
+          </div>
           {% endfor %}
         </div>
         {% endif %}
@@ -158,7 +172,7 @@
   {% if fresh_articles %}
   <div class="newspaper-grid">
     {% for item in fresh_articles %}
-    {{ article_card(item.article, false, active_filter) }}
+    {{ article_card(item.article, false, active_filter, item.comments) }}
     {% endfor %}
   </div>
   {% else %}
@@ -177,7 +191,7 @@
   </div>
   <div class="newspaper-grid">
     {% for item in archive_articles %}
-    {{ article_card(item.article, item.old, active_filter) }}
+    {{ article_card(item.article, item.old, active_filter, item.comments) }}
     {% endfor %}
   </div>
 </div>

@@ -108,10 +108,10 @@ def _fetch_search_sync(
     discovered_channels: {identifier -> display_name} for new channels found.
     """
     import yt_dlp
-    from app.database import get_youtube_channels
+    from app.database import get_all_youtube_channel_identifiers
 
-    # Build set of already-known channel identifiers
-    known_channels = {row["identifier"] for row in get_youtube_channels()}
+    # Build set of already-known channel identifiers (including blocked)
+    known_channels = get_all_youtube_channel_identifiers()
 
     ydl_opts = {
         "quiet": True,

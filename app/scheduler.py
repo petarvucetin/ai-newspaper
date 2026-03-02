@@ -153,6 +153,20 @@ async def _run_fetch_inner() -> dict:
         else:
             skipped += 1
 
+    # --- Fetch top comments for new articles ---
+    from app.database import get_articles_needing_comments, insert_comments
+    from app.fetchers.comments import fetch_comments_batch
+
+    articles_for_comments = get_articles_needing_comments()
+    if articles_for_comments:
+        fetch_state.add(f"💬 Fetching comments for {len(articles_for_comments)} articles…")
+        comments_map = await fetch_comments_batch(articles_for_comments)
+        total_comments = 0
+        for aid, comments in comments_map.items():
+            total_comments += insert_comments(aid, comments)
+        fetch_state.add(f"✓ Stored {total_comments} comments across {len(comments_map)} articles")
+        logger.info("Stored %d comments for %d articles", total_comments, len(comments_map))
+
     # --- Auto-dismiss classifier ---
     from app.database import get_dismissed_titles, auto_dismiss_articles
 

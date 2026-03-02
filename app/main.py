@@ -3,6 +3,7 @@ from pathlib import Path
 import logging
 
 from fastapi import FastAPI
+
 from fastapi.staticfiles import StaticFiles
 
 from app.database import init_db, seed_keywords, seed_sources

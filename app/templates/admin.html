@@ -149,11 +149,9 @@
             {% endif %}
           </td>
           <td>
-            <form method="post" action="/admin/source/{{ ch.id }}/weight" class="inline-form">
-              <input type="number" name="weight" value="{{ '%.2f'|format(ch.weight) }}"
-                     min="0.1" max="3.0" step="0.05" class="weight-input">
-              <button type="submit" class="btn btn-sm">Save</button>
-            </form>
+            <input type="number" value="{{ '%.2f'|format(ch.weight) }}"
+                   min="0.1" max="3.0" step="0.05" class="weight-input weight-track"
+                   data-type="source" data-id="{{ ch.id }}">
           </td>
           <td class="action-cell">
             {% if ch.enabled %}
@@ -210,11 +208,9 @@
             {{ 'Active' if r.enabled else 'Disabled' }}
           </td>
           <td>
-            <form method="post" action="/admin/source/{{ r.id }}/weight" class="inline-form">
-              <input type="number" name="weight" value="{{ '%.2f'|format(r.weight) }}"
-                     min="0.1" max="3.0" step="0.05" class="weight-input">
-              <button type="submit" class="btn btn-sm">Save</button>
-            </form>
+            <input type="number" value="{{ '%.2f'|format(r.weight) }}"
+                   min="0.1" max="3.0" step="0.05" class="weight-input weight-track"
+                   data-type="source" data-id="{{ r.id }}">
           </td>
           <td class="action-cell">
             <form method="post" action="/admin/reddit/{{ r.id }}/toggle" class="inline-form">
@@ -263,11 +259,9 @@
           <td>{{ src.name }}</td>
           <td><span class="source-badge source-{{ src.source_type }}">{{ src.source_type }}</span></td>
           <td>
-            <form method="post" action="/admin/source/{{ src.id }}/weight" class="inline-form">
-              <input type="number" name="weight" value="{{ '%.2f'|format(src.weight) }}"
-                     min="0.1" max="3.0" step="0.05" class="weight-input">
-              <button type="submit" class="btn btn-sm">Save</button>
-            </form>
+            <input type="number" value="{{ '%.2f'|format(src.weight) }}"
+                   min="0.1" max="3.0" step="0.05" class="weight-input weight-track"
+                   data-type="source" data-id="{{ src.id }}">
           </td>
           <td>
             <span class="status-dot {% if src.enabled %}on{% else %}off{% endif %}"></span>
@@ -312,11 +306,9 @@
         <tr>
           <td><code>{{ kw.keyword }}</code></td>
           <td>
-            <form method="post" action="/admin/keyword/{{ kw.id }}/weight" class="inline-form">
-              <input type="number" name="weight" value="{{ '%.3f'|format(kw.weight) }}"
-                     min="0.1" max="5.0" step="0.025" class="weight-input">
-              <button type="submit" class="btn btn-sm">Save</button>
-            </form>
+            <input type="number" value="{{ '%.3f'|format(kw.weight) }}"
+                   min="0.1" max="5.0" step="0.025" class="weight-input weight-track"
+                   data-type="keyword" data-id="{{ kw.id }}">
           </td>
           <td>{{ kw.hits }}</td>
           <td>
@@ -330,6 +322,11 @@
       </tbody>
     </table>
   </section>
+
+  <div class="save-bar" id="save-bar" style="display:none">
+    <span class="save-bar-text" id="save-bar-text">Unsaved changes</span>
+    <button class="btn btn-primary" id="save-all-btn" onclick="saveAllWeights()">Save All</button>
+  </div>
 </div>
 {% endblock %}
 
@@ -390,6 +387,72 @@ async function startFetch() {
 
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ---- Bulk weight save ----
+const _originals = new Map();
+document.querySelectorAll('.weight-track').forEach(inp => {
+  _originals.set(inp, inp.value);
+  inp.addEventListener('input', checkDirty);
+});
+
+function checkDirty() {
+  let dirty = 0;
+  _originals.forEach((orig, inp) => {
+    const changed = inp.value !== orig;
+    inp.classList.toggle('dirty', changed);
+    if (changed) dirty++;
+  });
+  const bar = document.getElementById('save-bar');
+  const txt = document.getElementById('save-bar-text');
+  if (dirty > 0) {
+    bar.style.display = '';
+    txt.textContent = dirty + ' unsaved change' + (dirty > 1 ? 's' : '');
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+async function saveAllWeights() {
+  const sources = [];
+  const keywords = [];
+  _originals.forEach((orig, inp) => {
+    if (inp.value === orig) return;
+    const id = parseInt(inp.dataset.id, 10);
+    const w = parseFloat(inp.value);
+    if (inp.dataset.type === 'source') sources.push({ id, weight: w });
+    else if (inp.dataset.type === 'keyword') keywords.push({ id, weight: w });
+  });
+  if (!sources.length && !keywords.length) return;
+
+  const btn = document.getElementById('save-all-btn');
+  const txt = document.getElementById('save-bar-text');
+  btn.disabled = true;
+  txt.textContent = 'Saving\u2026';
+
+  try {
+    const resp = await fetch('/admin/weights/save', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sources, keywords }),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      // Update originals to new values and clear dirty highlights
+      _originals.forEach((orig, inp) => {
+        _originals.set(inp, inp.value);
+        inp.classList.remove('dirty');
+      });
+      txt.textContent = '\u2713 Saved ' + data.updated + ' weight' + (data.updated > 1 ? 's' : '');
+      setTimeout(() => { document.getElementById('save-bar').style.display = 'none'; }, 1500);
+    } else {
+      txt.textContent = 'Save failed';
+    }
+  } catch (e) {
+    txt.textContent = 'Save failed \u2014 network error';
+  }
+  btn.disabled = false;
 }
 </script>
 {% endblock %}
