@@ -40,46 +40,47 @@
 </div>
 {% endmacro %}
 
-{% block title %}The AI Intelligence — Daily Edition{% endblock %}
-
-{% block content %}
-{% if not articles %}
-<div class="empty-state">
-  <h2>No articles yet</h2>
-  <p>The daily fetch hasn't run yet. Visit <a href="/admin">Admin</a> to trigger a manual fetch.</p>
-</div>
-{% else %}
-<div class="newspaper-grid">
-  {% for article in articles %}
-  <article class="article-card src-{{ article.source_type }}"
+{% macro article_card(article, is_old, active_filter) %}
+  {%- set rscore = article.relevancy_score or 0 -%}
+  {%- if rscore >= 0.7 -%}{%- set rel_cls = 'relevancy-high' -%}
+  {%- elif rscore >= 0.4 -%}{%- set rel_cls = 'relevancy-mid' -%}
+  {%- else -%}{%- set rel_cls = 'relevancy-low' -%}
+  {%- endif -%}
+  <article class="article-card src-{{ article.source_type }} {{ rel_cls }}{% if is_old %} collapsed{% endif %}"
            data-article-id="{{ article.id }}"
            data-source-id="{{ article.source_id }}"
-           data-source-name="{{ article.source_name }}">
+           data-source-name="{{ article.source_name }}"
+           title="Relevancy: {{ '%.0f'|format(rscore * 100) }}%">
+    {% if article.source_type in ('youtube', 'youtube_channel') and article.thumbnail_url %}
+    <img class="article-thumb" src="{{ article.thumbnail_url }}" alt="" loading="lazy">
+    {% endif %}
     <div class="article-body">
       <div class="article-meta-top">
         {{ source_badge(article.source_type, article.source_name) }}
+        {% if article.published_at %}
+        <span class="pub-time" data-pub="{{ article.published_at }}" data-iso="{{ article.published_at }}">{{ article.published_at[:16] }}</span>
+        {% endif %}
+        {% if is_old %}
+        <button class="expand-toggle" title="Expand article">&#9660;</button>
+        {% endif %}
+      </div>
+
+      <div class="article-metrics">
         {% if article.source_type in ('youtube', 'youtube_channel') %}
           {% if article.upvotes > 0 %}
           <span class="view-count">&#128065; {{ fmt_count(article.upvotes) }} views</span>
           {% endif %}
         {% else %}
           {% if article.upvotes > 0 %}
-          <span class="upvotes">▲ {{ fmt_count(article.upvotes) }}</span>
+          <span class="upvotes">&#9650; {{ fmt_count(article.upvotes) }}</span>
           {% endif %}
           {% if article.source_type == 'reddit' and article.num_comments %}
           <span class="comment-count">&#128172; {{ fmt_count(article.num_comments) }}</span>
           {% endif %}
         {% endif %}
-        {% if article.published_at %}
-        <span class="pub-time" data-pub="{{ article.published_at }}" data-iso="{{ article.published_at }}">{{ article.published_at[:16] }}</span>
-        {% endif %}
       </div>
 
       <div class="article-scroll">
-        {% if article.relevancy_score is not none and article.relevancy_score > 0 %}
-        {{ score_bar(article.relevancy_score) }}
-        {% endif %}
-
         <h2 class="article-title">
           <a href="{{ article.url }}" target="_blank" rel="noopener">{{ article.title }}</a>
         </h2>
@@ -94,32 +95,93 @@
       </div>
 
       <div class="article-footer">
-        <div class="article-byline">
-          {% if article.author %}<span class="author">{{ article.author }}</span>{% endif %}
-        </div>
         <div class="article-actions">
           {{ star_widget(article.id, article.user_rating) }}
           <button class="bookmark-btn" data-article-id="{{ article.id }}" title="Bookmark">&#9711;</button>
           {% if active_filter == 'dismissed' %}
-          <button class="restore-btn" data-article-id="{{ article.id }}" title="Restore article">↩</button>
+          <button class="restore-btn" data-article-id="{{ article.id }}" title="Restore article">&#8617;</button>
           {% else %}
-          <button class="dismiss-btn" data-article-id="{{ article.id }}" title="Dismiss article">✕</button>
+          <button class="dismiss-btn" data-article-id="{{ article.id }}" title="Dismiss article">&#10005;</button>
           {% endif %}
           {% if article.source_type in ('reddit', 'youtube_channel', 'youtube') %}
           <button class="remove-source-btn" title="Remove source: {{ article.source_name }}">&#128683;</button>
           {% endif %}
         </div>
+        {% if article.author %}<span class="article-author-hint" title="{{ article.author }}">{{ article.author }}</span>{% endif %}
       </div>
     </div>
   </article>
-  {% endfor %}
+{% endmacro %}
+
+{% block title %}The AI Intelligence — Daily Edition{% endblock %}
+
+{% block filter_nav %}
+  <a href="/?source=all" class="filter-btn {% if active_filter == 'all' %}active{% endif %}">All</a>
+  <a href="/?source=reddit" class="filter-btn {% if active_filter == 'reddit' %}active{% endif %}">Reddit {% if source_counts.get('reddit') %}<span class="filter-count">{{ source_counts.reddit }}</span>{% endif %}</a>
+  <a href="/?source=youtube" class="filter-btn {% if active_filter == 'youtube' %}active{% endif %}">YouTube {% if source_counts.get('youtube') %}<span class="filter-count">{{ source_counts.youtube }}</span>{% endif %}</a>
+  <a href="/?source=hackernews" class="filter-btn {% if active_filter == 'hackernews' %}active{% endif %}">Hacker News {% if source_counts.get('hackernews') %}<span class="filter-count">{{ source_counts.hackernews }}</span>{% endif %}</a>
+  <a href="/?source=bookmarks" class="filter-btn {% if active_filter == 'bookmarks' %}active{% endif %}">Bookmarks</a>
+  <a href="/?source=dismissed" class="filter-btn {% if active_filter == 'dismissed' %}active{% endif %}">Dismissed</a>
+  <input type="search" id="card-search" class="card-search" placeholder="Search articles..." autocomplete="off">
+{% endblock %}
+
+{% block content %}
+{% if not fresh_articles and not archive_articles %}
+<div class="empty-state">
+  <svg class="empty-icon" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/>
+    <line x1="10" y1="6" x2="18" y2="6"/>
+    <line x1="10" y1="10" x2="18" y2="10"/>
+    <line x1="10" y1="14" x2="14" y2="14"/>
+  </svg>
+  <h2>No articles yet</h2>
+  <p>The daily fetch hasn't run yet. Visit <a href="/admin">Admin</a> to trigger a manual fetch.</p>
 </div>
+{% else %}
+
+{% if archive_articles %}
+<div class="page-tabs">
+  <button class="page-tab active" data-tab="fresh">Fresh <span class="tab-count">{{ fresh_articles|length }}</span></button>
+  <button class="page-tab" data-tab="archive">Archive <span class="tab-count">{{ archive_articles|length }}</span></button>
+</div>
+{% endif %}
+
+<div id="tab-fresh" class="tab-panel active">
+  {% if fresh_articles %}
+  <div class="newspaper-grid">
+    {% for item in fresh_articles %}
+    {{ article_card(item.article, false, active_filter) }}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h2>No fresh articles</h2>
+    <p>All current articles are older than 7 days. Check the Archive tab.</p>
+  </div>
+  {% endif %}
+</div>
+
+{% if archive_articles %}
+<div id="tab-archive" class="tab-panel">
+  <div class="archive-header">
+    <p class="archive-note">Articles older than 7 days. Items over 10 days old are collapsed.</p>
+    <button id="expand-all-btn" class="btn btn-sm btn-secondary">Expand All</button>
+  </div>
+  <div class="newspaper-grid">
+    {% for item in archive_articles %}
+    {{ article_card(item.article, item.old, active_filter) }}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% endif %}
 
 <!-- Undo toast -->
 <div id="undo-toast">
-  Article dismissed
+  <span>Article dismissed</span>
   <button id="undo-btn">Undo</button>
+  <div class="toast-progress"><div class="toast-progress-bar"></div></div>
 </div>
 
 <!-- Keyboard hint -->
@@ -131,6 +193,54 @@
 {% block scripts %}
 <script src="/static/rating.js"></script>
 <script>
+  // ---- Tab switching with crossfade ----
+  document.querySelectorAll('.page-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.page-tab').forEach(t => t.classList.remove('active'));
+      const panels = document.querySelectorAll('.tab-panel');
+      // Fade out current
+      panels.forEach(p => { p.style.opacity = '0'; });
+      setTimeout(() => {
+        panels.forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const target = document.getElementById('tab-' + tab.dataset.tab);
+        target.classList.add('active');
+        // Trigger reflow then fade in
+        requestAnimationFrame(() => { target.style.opacity = '1'; });
+      }, 150);
+    });
+  });
+
+  // ---- Collapse / expand for old articles ----
+  document.querySelectorAll('.expand-toggle').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const card = btn.closest('.article-card');
+      card.classList.toggle('collapsed');
+      btn.textContent = card.classList.contains('collapsed') ? '\u25BC' : '\u25B2';
+    });
+  });
+
+  const expandAllBtn = document.getElementById('expand-all-btn');
+  if (expandAllBtn) {
+    let allExpanded = false;
+    expandAllBtn.addEventListener('click', () => {
+      allExpanded = !allExpanded;
+      document.querySelectorAll('#tab-archive .article-card.collapsed, #tab-archive .article-card').forEach(card => {
+        if (allExpanded) {
+          card.classList.remove('collapsed');
+        } else {
+          // Only re-collapse cards that were originally old (have an expand toggle)
+          if (card.querySelector('.expand-toggle')) card.classList.add('collapsed');
+        }
+      });
+      document.querySelectorAll('#tab-archive .expand-toggle').forEach(btn => {
+        btn.textContent = allExpanded ? '\u25B2' : '\u25BC';
+      });
+      expandAllBtn.textContent = allExpanded ? 'Collapse All' : 'Expand All';
+    });
+  }
+
   // ---- Relative timestamps ----
   function fmtPubTime(utcStr) {
     const dt = new Date(utcStr.replace(' ', 'T') + 'Z');
@@ -177,6 +287,11 @@
   if (_grid && ![..._grid.querySelectorAll('.article-card')].some(c => c.style.display !== 'none')) {
     _grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><h2>No bookmarks yet</h2><p>Click ☆ on any article to save it here.</p></div>';
   }
+  {% else %}
+  // Hide bookmarked articles from non-bookmark views
+  document.querySelectorAll('.article-card').forEach(card => {
+    if (bookmarks.has(card.dataset.articleId)) card.style.display = 'none';
+  });
   {% endif %}
 
   document.querySelectorAll('.bookmark-btn').forEach(btn => {
@@ -190,6 +305,8 @@
       btn.textContent = '☆';
     }
     btn.addEventListener('click', () => {
+      btn.classList.add('bouncing');
+      setTimeout(() => btn.classList.remove('bouncing'), 250);
       if (bookmarks.has(id)) {
         bookmarks.delete(id);
         btn.textContent = '☆';
@@ -207,11 +324,11 @@
         btn.classList.add('active');
         card.classList.add('bookmarked');
         {% if active_filter != 'bookmarks' %}
-        // Move to bookmarks tab — remove from current view
+        // Hide from current view — only visible in bookmarks tab
         card.style.transition = 'opacity 0.15s, transform 0.15s';
         card.style.opacity = '0';
         card.style.transform = 'scale(0.97)';
-        setTimeout(() => card.remove(), 150);
+        setTimeout(() => { card.style.display = 'none'; }, 150);
         {% endif %}
       }
       saveBookmarks(bookmarks);
@@ -228,7 +345,7 @@
   function showToast() {
     toast.classList.add('visible');
     clearTimeout(undoTimeout);
-    undoTimeout = setTimeout(commitDismiss, 4000);
+    undoTimeout = setTimeout(hideToastAndClear, 4000);
   }
 
   function hideToast() {
@@ -274,10 +391,8 @@
       console.error('Dismiss error:', err);
     }
 
-    card.style.transition = 'opacity 0.15s, transform 0.15s';
-    card.style.opacity = '0';
-    card.style.transform = 'scale(0.97)';
-    setTimeout(() => card.remove(), 150);
+    card.classList.add('dismissing');
+    setTimeout(() => card.remove(), 250);
 
     pendingDismiss = { card, articleId, grid, nextSibling };
     showToast();
@@ -339,14 +454,18 @@
   let kbIdx = -1;
 
   function getCards() {
-    return [...document.querySelectorAll('.article-card')];
+    // Only navigate cards in the active tab panel
+    const activePanel = document.querySelector('.tab-panel.active') || document;
+    return [...activePanel.querySelectorAll('.article-card')];
   }
 
   function focusCard(idx) {
     const cards = getCards();
     if (cards.length === 0) return;
     kbIdx = Math.max(0, Math.min(idx, cards.length - 1));
-    cards.forEach((c, i) => c.classList.toggle('kb-focus', i === kbIdx));
+    // Clear focus from all cards (both panels)
+    document.querySelectorAll('.article-card.kb-focus').forEach(c => c.classList.remove('kb-focus'));
+    cards[kbIdx].classList.add('kb-focus');
     cards[kbIdx].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
@@ -386,5 +505,19 @@
       }
     }
   });
+
+  // ---- Client-side search ----
+  const searchInput = document.getElementById('card-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const q = searchInput.value.toLowerCase().trim();
+      document.querySelectorAll('.article-card').forEach(card => {
+        if (!q) { card.style.removeProperty('display'); return; }
+        const title = card.querySelector('.article-title')?.textContent.toLowerCase() || '';
+        const summary = card.querySelector('.article-summary')?.textContent.toLowerCase() || '';
+        card.style.display = (title.includes(q) || summary.includes(q)) ? '' : 'none';
+      });
+    });
+  }
 </script>
 {% endblock %}

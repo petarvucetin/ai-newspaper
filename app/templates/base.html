@@ -18,19 +18,24 @@
       <h1 class="paper-title">The AI Intelligence</h1>
       <div class="masthead-links">
         <a href="/admin">Admin</a>
-        <div class="font-size-ctrl">
-          <button id="font-dec" title="Decrease font size">A−</button>
-          <button id="font-inc" title="Increase font size">A+</button>
+        <button id="theme-toggle" class="theme-toggle-btn" title="Toggle dark/light mode" aria-label="Toggle theme">
+          <span class="theme-icon">&#9790;</span>
+        </button>
+        <div class="settings-dropdown">
+          <button class="settings-btn" title="Settings" aria-label="Settings">&#9881;</button>
+          <div class="settings-panel">
+            <div class="font-size-ctrl">
+              <span class="settings-label">Font size</span>
+              <button id="font-dec" title="Decrease font size">A&minus;</button>
+              <button id="font-inc" title="Increase font size">A+</button>
+            </div>
+            <span class="version-tag">v{{ app_version }}</span>
+          </div>
         </div>
       </div>
     </div>
     <nav class="filter-nav">
-      <a href="/?source=all" class="filter-btn {% if active_filter == 'all' %}active{% endif %}">All Sources</a>
-      <a href="/?source=reddit" class="filter-btn {% if active_filter == 'reddit' %}active{% endif %}">Reddit</a>
-      <a href="/?source=youtube" class="filter-btn {% if active_filter == 'youtube' %}active{% endif %}">YouTube</a>
-      <a href="/?source=hackernews" class="filter-btn {% if active_filter == 'hackernews' %}active{% endif %}">Hacker News</a>
-      <a href="/?source=bookmarks" class="filter-btn {% if active_filter == 'bookmarks' %}active{% endif %}">Bookmarks</a>
-      <a href="/?source=dismissed" class="filter-btn {% if active_filter == 'dismissed' %}active{% endif %}">Dismissed</a>
+      {% block filter_nav %}{% endblock %}
     </nav>
   </header>
 
@@ -39,11 +44,45 @@
   </main>
 
   <footer class="footer">
-    <p>AI News Tracker &mdash; Relevancy-ranked daily digest</p>
+    AI News Tracker &mdash; Daily AI digest
   </footer>
 
   {% block scripts %}{% endblock %}
   <script>
+    // ---- Theme toggle ----
+    const THEME_KEY = 'ai-news-theme';
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = themeToggle?.querySelector('.theme-icon');
+
+    function applyTheme(mode) {
+      if (mode === 'dark') {
+        document.documentElement.classList.add('dark');
+        if (themeIcon) themeIcon.textContent = '\u2600'; // sun
+      } else {
+        document.documentElement.classList.remove('dark');
+        if (themeIcon) themeIcon.textContent = '\u263E'; // moon
+      }
+    }
+
+    // Init: check localStorage, then system preference
+    (function initTheme() {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved) {
+        applyTheme(saved);
+      } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        applyTheme('dark');
+      }
+    })();
+
+    if (themeToggle) {
+      themeToggle.addEventListener('click', () => {
+        const isDark = document.documentElement.classList.contains('dark');
+        const next = isDark ? 'light' : 'dark';
+        applyTheme(next);
+        localStorage.setItem(THEME_KEY, next);
+      });
+    }
+
     // ---- Font size control ----
     const FONT_KEY = 'ai-news-font-size';
     const FONT_MIN = 11, FONT_MAX = 22, FONT_STEP = 1;
@@ -70,6 +109,17 @@
       applyFontSize(next);
       localStorage.setItem(FONT_KEY, next);
     });
+
+    // ---- Settings dropdown ----
+    const settingsDropdown = document.querySelector('.settings-dropdown');
+    if (settingsDropdown) {
+      const settingsBtn = settingsDropdown.querySelector('.settings-btn');
+      settingsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        settingsDropdown.classList.toggle('open');
+      });
+      document.addEventListener('click', () => settingsDropdown.classList.remove('open'));
+    }
 
     const el = document.getElementById('last-fetched');
     if (el && el.dataset.utc) {

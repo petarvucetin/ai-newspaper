@@ -38,25 +38,41 @@ def run_tests():
         has_articles = page.locator(".article-card").count() > 0
         print(f"  {'Articles present' if has_articles else 'No articles — some tests will be limited'}")
 
-        # ── 1. Relevancy score bar ─────────────────────────────────────────────
-        print("\n[1] Relevancy score bar")
+        # ── 1. Relevancy accent border ────────────────────────────────────────
+        print("\n[1] Relevancy accent border")
         if has_articles:
-            check("score-bar-wrap element exists on at least one card",
-                  lambda: page.locator(".score-bar-wrap").first.wait_for(timeout=3000))
-            check("score-fill element has a non-zero width style",
+            check("article-card has a relevancy class",
                   lambda: _assert(
-                      lambda: len([c for c in page.locator(".score-fill").all()
-                                   if "width:" in (c.get_attribute("style") or "")]) > 0,
-                      "No score-fill with width style found"
+                      lambda: page.locator(".article-card.relevancy-high, .article-card.relevancy-mid, .article-card.relevancy-low").count() > 0,
+                      "No cards with relevancy-high/mid/low class"
                   ))
-            check("score bar tooltip contains 'Relevancy score'",
+            check("card has visible border-left color",
                   lambda: _assert(
-                      lambda: any("Relevancy score" in (el.get_attribute("title") or "")
-                                  for el in page.locator(".score-bar-wrap").all()),
-                      "No score-bar-wrap with correct title"
+                      lambda: page.evaluate("""() => {
+                          const card = document.querySelector('.article-card.relevancy-high, .article-card.relevancy-mid');
+                          if (!card) return false;
+                          const color = getComputedStyle(card).borderLeftColor;
+                          return color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent';
+                      }"""),
+                      "No visible border-left-color on relevancy card"
+                  ))
+            check("card title attribute contains 'Relevancy'",
+                  lambda: _assert(
+                      lambda: any("Relevancy" in (el.get_attribute("title") or "")
+                                  for el in page.locator(".article-card").all()[:5]),
+                      "No card with Relevancy tooltip"
+                  ))
+            check("score-bar-wrap is hidden",
+                  lambda: _assert(
+                      lambda: page.evaluate("""() => {
+                          const el = document.querySelector('.score-bar-wrap');
+                          if (!el) return true;
+                          return getComputedStyle(el).display === 'none';
+                      }"""),
+                      "score-bar-wrap is still visible"
                   ))
         else:
-            _skip("[1] No articles to test score bar")
+            _skip("[1] No articles to test accent border")
 
         # ── 2. align-items: start on grid ─────────────────────────────────────
         print("\n[2] Grid align-items: start")
@@ -87,21 +103,26 @@ def run_tests():
                   "No :visited rule found in stylesheets"
               ))
 
-        # ── 4. Featured card prominence ────────────────────────────────────────
-        print("\n[4] Featured card")
+        # ── 4. Card flexible height (min-height, no fixed height) ────────────
+        print("\n[4] Card flexible height")
         if has_articles:
-            check("first card has class 'featured'",
-                  lambda: _assert(
-                      lambda: page.locator(".article-card.featured").count() == 1,
-                      "No .featured card found"
-                  ))
-            check("featured card title font-size >= 28px",
+            check("card has min-height >= 200px",
                   lambda: _assert(
                       lambda: float(page.eval_on_selector(
-                          ".article-card.featured .article-title",
-                          "el => parseFloat(getComputedStyle(el).fontSize)"
-                      )) >= 28,
-                      "Featured title font-size too small"
+                          ".article-card",
+                          "el => parseFloat(getComputedStyle(el).minHeight)"
+                      )) >= 200,
+                      "Card min-height too small"
+                  ))
+            check("card has no fixed height (auto or 0)",
+                  lambda: _assert(
+                      lambda: page.evaluate("""() => {
+                          const card = document.querySelector('.article-card');
+                          const h = getComputedStyle(card).height;
+                          // Should not be exactly 380px (old fixed height)
+                          return parseFloat(h) !== 380;
+                      }"""),
+                      "Card still has fixed 380px height"
                   ))
         else:
             _skip("[4] No articles")
@@ -129,40 +150,27 @@ def run_tests():
         else:
             _skip("[6] No articles")
 
-        # ── 7. Dark mode CSS ───────────────────────────────────────────────────
+        # ── 7. Dark mode toggle ────────────────────────────────────────────────
         print("\n[7] Dark mode")
-        check("@media prefers-color-scheme: dark rule exists",
+        check("html.dark CSS rule exists in stylesheet",
               lambda: _assert(
                   lambda: page.evaluate("""() => {
                       for (const sheet of document.styleSheets) {
                           try {
                               for (const rule of sheet.cssRules) {
-                                  if (rule.media && Array.from(rule.media).some(m => m.includes('dark')))
+                                  if (rule.selectorText && rule.selectorText.includes('html.dark'))
                                       return true;
                               }
                           } catch {}
                       }
                       return false;
                   }"""),
-                  "No dark mode @media rule found"
+                  "No html.dark CSS rule found"
               ))
-        # Simulate dark mode and verify background changes
-        dark_ctx = browser.new_context(
-            viewport={"width": 1280, "height": 900},
-            color_scheme="dark"
-        )
-        dark_page = dark_ctx.new_page()
-        dark_page.goto(BASE, wait_until="networkidle")
-        check("body background in dark mode is not the light cream (#f5f0e8)",
-              lambda: _assert(
-                  lambda: dark_page.eval_on_selector(
-                      "body",
-                      "el => getComputedStyle(el).backgroundColor"
-                  ) != "rgb(245, 240, 232)",
-                  "Dark mode background unchanged from light mode"
-              ))
-        dark_page.close()
-        dark_ctx.close()
+        check("theme-toggle button exists",
+              lambda: page.locator("#theme-toggle").wait_for(timeout=3000))
+        check("clicking theme toggle adds .dark class to html",
+              lambda: _test_theme_toggle(page))
 
         # ── 8. Sticky masthead ─────────────────────────────────────────────────
         print("\n[8] Sticky masthead")
@@ -209,11 +217,15 @@ def run_tests():
                   ".star-widget.rated pointer-events: none not found in CSS"
               ))
 
-        # ── 11. Card height (grid align-items) ─────────────────────────────────
-        # Same assertion as #2 — covered.
-        print("\n[11] Card height consistency (covered by #2)")
-        results.append(("[11] align-items:start", "pass", "covered by test #2"))
-        print(f"  {PASS} Covered by test #2")
+        # ── 11. Search input ──────────────────────────────────────────────────
+        print("\n[11] Search input")
+        check("card-search input exists",
+              lambda: page.locator("#card-search").wait_for(timeout=3000))
+        if has_articles:
+            check("search filters cards by title",
+                  lambda: _test_search(page))
+        else:
+            _skip("[11] No articles for search test")
 
         # ── Source interleaving ────────────────────────────────────────────────
         print("\n[+] Source interleaving on All Sources view")
@@ -368,6 +380,41 @@ def _test_keyboard_nav(page):
     focused = page.locator(".article-card.kb-focus").count()
     if focused == 0:
         raise AssertionError("No card has kb-focus class after pressing 'j'")
+
+
+def _test_theme_toggle(page):
+    # Click the theme toggle button
+    page.locator("#theme-toggle").click()
+    page.wait_for_timeout(300)
+    is_dark = page.evaluate("() => document.documentElement.classList.contains('dark')")
+    if not is_dark:
+        raise AssertionError("html element does not have 'dark' class after theme toggle click")
+    # Background should differ from light mode cream
+    bg = page.eval_on_selector("body", "el => getComputedStyle(el).backgroundColor")
+    if bg == "rgb(245, 240, 232)":
+        raise AssertionError("Background unchanged from light mode after dark toggle")
+    # Toggle back to light
+    page.locator("#theme-toggle").click()
+    page.wait_for_timeout(200)
+
+def _test_search(page):
+    page.reload(wait_until="networkidle")
+    total_before = page.locator(".article-card").count()
+    if total_before == 0:
+        raise AssertionError("No cards to test search")
+    # Type a query that likely won't match all cards
+    page.fill("#card-search", "xyznonexistent12345")
+    page.wait_for_timeout(300)
+    visible = page.evaluate("""() => {
+        return [...document.querySelectorAll('.article-card')].filter(
+            c => getComputedStyle(c).display !== 'none'
+        ).length;
+    }""")
+    if visible >= total_before:
+        raise AssertionError("Search did not hide any cards for nonsense query")
+    # Clear search
+    page.fill("#card-search", "")
+    page.wait_for_timeout(200)
 
 
 if __name__ == "__main__":
