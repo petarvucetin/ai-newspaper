@@ -382,7 +382,7 @@ main {
   padding: 0;  /* padding moves inside .article-body */
   display: flex;
   flex-direction: column;
-  min-height: 200px;
+  height: 380px;
   overflow: hidden;
   border-radius: 6px;
   border: 1px solid var(--rule);
@@ -428,6 +428,7 @@ main {
   flex-direction: column;
   gap: 0.4rem;
   flex: 1;
+  min-height: 0;       /* allow flex children to shrink below content size */
   overflow: hidden;
   padding: 0.8rem 1rem;
 }
@@ -445,6 +446,7 @@ main {
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+  flex-shrink: 0;      /* don't collapse when card is tight */
 }
 
 .article-metrics {
@@ -588,6 +590,7 @@ main {
   align-items: center;
   justify-content: space-between;
   margin-top: auto;
+  flex-shrink: 0;      /* never collapse — stays pinned at card bottom */
   padding-top: 0.5rem;
   border-top: 1px solid var(--rule);
   gap: 0.5rem;
