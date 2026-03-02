@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+/* Newspaper theme — CSS custom properties */
+:root {
+  --article-font-size: 16px;
+  --cream: #f5f0e8;
+  --cream-dark: #ede7d5;
+  --ink: #1a1a1a;
+  --ink-light: #444;
+  --ink-muted: #777;
+  --rule: #c8bea0;
+  --accent: #8b1a1a;
+  --reddit-color: #ff4500;
+  --youtube-color: #cc0000;
+  --hn-color: #ff6600;
+  --badge-text: #fff;
+  --star-off: #c8bea0;
+  --star-on: #c9a227;
+  --font-serif: 'Georgia', 'Times New Roman', serif;
+  --font-sans: 'Helvetica Neue', Arial, sans-serif;
+  --score-low: #c8bea0;
+  --score-mid: #c9a227;
+  --score-high: #2a7a2a;
+}
+
+html.dark {
+  --cream: #141210;
+  --cream-dark: #1e1b17;
+  --ink: #ddd5c4;
+  --ink-light: #b8b0a0;
+  --ink-muted: #7a7060;
+  --rule: #2e2a22;
+  --accent: #d4736a;
+  --star-off: #4a4535;
+  --star-on: #c9a227;
+  --score-low: #4a4535;
+  --score-mid: #c9a227;
+  --score-high: #3a9a3a;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+/* Scrollbar styling for dark mode */
+html.dark ::-webkit-scrollbar { width: 6px; }
+html.dark ::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3px; }
+
+/* Visited link color */
+a:visited { color: var(--ink-muted); }
