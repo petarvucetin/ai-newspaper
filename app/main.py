@@ -48,3 +48,18 @@ app.include_router(rating.router)
 app.include_router(admin.router)
 app.include_router(dismiss.router)
 app.include_router(api.router)
+
+# Serve React SPA in production (site/dist must exist from `npm run build`)
+from fastapi.responses import FileResponse
+
+spa_dir = Path(__file__).parent.parent / "site" / "dist"
+if spa_dir.exists():
+    app.mount("/assets", StaticFiles(directory=str(spa_dir / "assets")), name="spa-assets")
+
+    @app.get("/{path:path}")
+    async def serve_spa(path: str):
+        """Catch-all: serve index.html for client-side routing."""
+        file = spa_dir / path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(spa_dir / "index.html")
