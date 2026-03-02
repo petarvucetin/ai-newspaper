@@ -4,6 +4,7 @@ from difflib import SequenceMatcher
 from datetime import datetime, timezone
 from app.database import db_conn, get_sources, purge_old_dismissed
 from app.scoring.relevancy import score_article
+from app.scoring.classifier import classify_new_articles
 from app.fetchers.hackernews import fetch_hackernews
 from app.fetchers.reddit import fetch_reddit
 from app.fetchers.youtube import fetch_youtube
@@ -151,6 +152,41 @@ async def _run_fetch_inner() -> dict:
             inserted += 1
         else:
             skipped += 1
+
+    # --- Auto-dismiss classifier ---
+    from app.database import get_dismissed_titles, auto_dismiss_articles
+
+    dismissed_titles = get_dismissed_titles(days=30)
+    if dismissed_titles and inserted > 0:
+        fetch_state.add(f"🔍 Running dismiss classifier ({len(dismissed_titles)} dismiss patterns)…")
+
+        # Get newly inserted articles (not yet dismissed, fetched in last hour)
+        with db_conn() as con:
+            new_rows = con.execute(
+                """SELECT id, title FROM articles
+                   WHERE COALESCE(dismissed, 0) = 0
+                     AND fetched_at >= datetime('now', '-1 hour')
+                   ORDER BY id DESC""",
+            ).fetchall()
+
+        new_articles = [{"id": r["id"], "title": r["title"]} for r in new_rows]
+
+        if new_articles:
+            result = await classify_new_articles(dismissed_titles, new_articles)
+
+            if result["patterns_found"]:
+                fetch_state.add(f"📋 Patterns: {', '.join(result['patterns_found'][:5])}")
+
+            if result["dismiss"]:
+                ids_to_dismiss = [d["id"] for d in result["dismiss"]]
+                count = auto_dismiss_articles(ids_to_dismiss)
+                reasons = "; ".join(f"{d['id']}: {d.get('reason', '?')}" for d in result["dismiss"][:10])
+                fetch_state.add(f"🚫 Auto-dismissed {count} article(s): {reasons}")
+                logger.info("Auto-dismissed %d articles: %s", count, reasons)
+            else:
+                fetch_state.add("✓ Classifier: no articles to dismiss")
+    elif not dismissed_titles:
+        fetch_state.add("ℹ No dismiss history yet — classifier skipped")
 
     purged = purge_old_dismissed()
     if purged:
