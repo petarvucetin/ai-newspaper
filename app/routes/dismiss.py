@@ -20,7 +20,7 @@ async def dismiss_article(article_id: int):
 async def restore_article(article_id: int):
     with db_conn() as con:
         cur = con.execute(
-            "UPDATE articles SET dismissed = 0, dismissed_at = NULL WHERE id = ?",
+            "UPDATE articles SET dismissed = 0, dismissed_at = NULL, auto_dismissed = 0 WHERE id = ?",
             (article_id,)
         )
         if cur.rowcount == 0:

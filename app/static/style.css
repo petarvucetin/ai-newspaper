@@ -510,6 +510,34 @@ main {
 /* Score bar — hidden (replaced by accent border) */
 .score-bar-wrap { display: none; }
 
+/* ---- Relevancy label (inline) ---- */
+.relevancy-label {
+  font-family: var(--font-sans);
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--ink-muted);
+  background: var(--cream-dark);
+  padding: 0.1rem 0.35rem;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.relevancy-label.high { color: var(--score-high); }
+.relevancy-label.mid  { color: var(--score-mid); }
+
+/* ---- Auto-dismiss badge ---- */
+.auto-badge {
+  font-family: var(--font-sans);
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+  background: var(--cream-dark);
+  border: 1px solid var(--rule);
+  padding: 0.1rem 0.35rem;
+  border-radius: 2px;
+}
+
 /* ---- Article title & links ---- */
 .article-title {
   font-family: var(--font-serif);

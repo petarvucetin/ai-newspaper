@@ -57,6 +57,14 @@
     <div class="article-body">
       <div class="article-meta-top">
         {{ source_badge(article.source_type, article.source_name) }}
+        {% if article.relevancy_score is not none and article.relevancy_score > 0 %}
+          {%- set rpct = (article.relevancy_score * 100)|int -%}
+          <span class="relevancy-label {% if rpct >= 70 %}high{% elif rpct >= 40 %}mid{% endif %}"
+                title="Relevancy: {{ '%.2f'|format(article.relevancy_score) }}">{{ rpct }}%</span>
+        {% endif %}
+        {% if article.auto_dismissed %}
+        <span class="auto-badge" title="Auto-dismissed by classifier">Auto</span>
+        {% endif %}
         {% if article.published_at %}
         <span class="pub-time" data-pub="{{ article.published_at }}" data-iso="{{ article.published_at }}">{{ article.published_at[:16] }}</span>
         {% endif %}
