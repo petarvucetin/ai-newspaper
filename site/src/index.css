@@ -54,3 +54,16 @@ html.dark ::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 3p
 
 /* Visited link color */
 a:visited { color: var(--ink-muted); }
+
+/* Responsive grid */
+@media (max-width: 900px) {
+  .grid { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 600px) {
+  .grid { grid-template-columns: 1fr !important; }
+}
+
+/* Dark mode admin overrides */
+html.dark .cookies-alert-ok    { background: #1a3a26 !important; color: #7acc99 !important; }
+html.dark .cookies-alert-warn  { background: #3a3010 !important; color: #d4a040 !important; }
+html.dark .cookies-alert-danger{ background: #3a1010 !important; color: #d47070 !important; }
