@@ -6,6 +6,8 @@ data/
 *.db
 .git/
 .gitignore
-*.md
-scripts/start.sh
+docs/
 youtube_cookies.txt
+site/node_modules/
+site/dist/
+.claude/

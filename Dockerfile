@@ -1,5 +1,13 @@
-FROM python:3.12-slim
+# Stage 1: Build React frontend
+FROM node:22-slim AS frontend
+WORKDIR /site
+COPY site/package.json site/package-lock.json ./
+RUN npm ci
+COPY site/ ./
+RUN npm run build
 
+# Stage 2: Python backend
+FROM python:3.12-slim
 WORKDIR /app
 
 # Install system dependencies
@@ -16,11 +24,13 @@ COPY app/ ./app/
 COPY scripts/ ./scripts/
 COPY config.yaml .
 
+# Copy built frontend from stage 1
+COPY --from=frontend /site/dist ./site/dist
+
 # Create data directory for SQLite DB
 RUN mkdir -p /app/data
 
 # Expose port
 EXPOSE 8000
 
-# Initialize DB then start server
-CMD ["sh", "-c", "python3 scripts/init_db.py && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
