@@ -76,12 +76,14 @@ async def api_articles(source: str = Query(default="all")):
         fresh, archive = _split_by_age(articles)
     _attach_comments(fresh)
     _attach_comments(archive)
+    from app import __version__
     return {
         "fresh": fresh,
         "archive": archive,
         "active_filter": source,
         "last_fetched_utc": _last_fetched_utc(),
         "source_counts": _source_counts(),
+        "version": __version__,
     }
 
 

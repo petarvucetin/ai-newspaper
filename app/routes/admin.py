@@ -1,7 +1,6 @@
 import secrets
 from datetime import datetime, timezone
 from fastapi import APIRouter, Request, Form, Depends, HTTPException, UploadFile, File
-from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pathlib import Path
 from app import config
@@ -59,7 +58,7 @@ async def update_source_weight(
     weight = max(0.1, min(3.0, weight))
     with db_conn() as con:
         con.execute("UPDATE sources SET weight = ? WHERE id = ?", (weight, source_id))
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/source/{source_id}/toggle")
@@ -68,7 +67,7 @@ async def toggle_source(source_id: int, _: str = Depends(require_admin)):
         con.execute(
             "UPDATE sources SET enabled = NOT enabled WHERE id = ?", (source_id,)
         )
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/keyword/{keyword_id}/weight")
@@ -80,7 +79,7 @@ async def update_keyword_weight(
     weight = max(0.1, min(5.0, weight))
     with db_conn() as con:
         con.execute("UPDATE keyword_weights SET weight = ? WHERE id = ?", (weight, keyword_id))
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/weights/save")
@@ -105,7 +104,7 @@ async def pin_channel(source_id: int, _: str = Depends(require_admin)):
     """Enable (pin) a discovered channel so it's fetched directly."""
     with db_conn() as con:
         con.execute("UPDATE sources SET enabled = 1 WHERE id = ? AND source_type = 'youtube_channel'", (source_id,))
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/channel/{source_id}/unpin")
@@ -113,7 +112,7 @@ async def unpin_channel(source_id: int, _: str = Depends(require_admin)):
     """Disable a channel (keep record but stop fetching it directly)."""
     with db_conn() as con:
         con.execute("UPDATE sources SET enabled = 0 WHERE id = ? AND source_type = 'youtube_channel'", (source_id,))
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/channel/{source_id}/delete")
@@ -124,7 +123,7 @@ async def delete_channel(source_id: int, _: str = Depends(require_admin)):
             "UPDATE sources SET blocked = 1, enabled = 0 WHERE id = ? AND source_type = 'youtube_channel'",
             (source_id,),
         )
-    return RedirectResponse("/admin", status_code=303)
+    return {"ok": True}
 
 
 @router.post("/admin/schedule")

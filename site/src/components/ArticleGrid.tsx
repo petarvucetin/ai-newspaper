@@ -138,7 +138,7 @@ export function ArticleGrid({
       <div
         className="grid gap-3"
         style={{
-          gridTemplateColumns: "repeat(3, 1fr)",
+          gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
           alignItems: "start",
           opacity: fadingOut ? 0 : 1,
           transition: "opacity 0.15s",

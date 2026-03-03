@@ -138,6 +138,7 @@ export function NewspaperPage() {
       showFilters
       lastFetchedUtc={data?.last_fetched_utc}
       sourceCounts={data?.source_counts}
+      version={data?.version}
     >
       {/* Search bar in filter area */}
       <div className="flex justify-end mb-4">

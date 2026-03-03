@@ -41,6 +41,7 @@ export interface ArticlesResponse {
   active_filter: string
   last_fetched_utc: string | null
   source_counts: Record<string, number>
+  version?: string
 }
 
 export interface Source {

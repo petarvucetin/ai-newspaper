@@ -26,6 +26,7 @@ interface ExpandableTabsProps {
   activeColor?: string;
   activeIndex?: number | null;
   onChange?: (index: number | null) => void;
+  rightContent?: React.ReactNode;
 }
 
 const buttonVariants = {
@@ -55,6 +56,7 @@ export function ExpandableTabs({
   activeColor = "text-[var(--accent)]",
   activeIndex: controlledIndex,
   onChange,
+  rightContent,
 }: ExpandableTabsProps) {
   const [selected, setSelected] = React.useState<number | null>(controlledIndex ?? null);
   const outsideClickRef = React.useRef<HTMLDivElement>(null);
@@ -130,6 +132,13 @@ export function ExpandableTabs({
           </motion.button>
         );
       })}
+
+      {rightContent && (
+        <>
+          <div className="ml-auto h-[24px] w-[1.2px] bg-[var(--rule)]" aria-hidden="true" />
+          {rightContent}
+        </>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo, type ReactNode } from "react"
+import { useMemo, type ReactNode } from "react"
 import { Link, useSearchParams, useNavigate } from "react-router-dom"
 import { useTheme } from "@/hooks/useTheme"
 import { useFontSize } from "@/hooks/useFontSize"
@@ -20,12 +20,12 @@ interface LayoutProps {
   lastFetchedUtc?: string | null
   sourceCounts?: Record<string, number>
   showFilters?: boolean
+  version?: string
 }
 
-export function Layout({ children, lastFetchedUtc, sourceCounts, showFilters = false }: LayoutProps) {
+export function Layout({ children, lastFetchedUtc, sourceCounts, showFilters = false, version }: LayoutProps) {
   const { dark, toggle: toggleTheme } = useTheme()
   const { inc, dec } = useFontSize()
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const activeFilter = searchParams.get("source") || "all"
@@ -40,7 +40,7 @@ export function Layout({ children, lastFetchedUtc, sourceCounts, showFilters = f
   // Build tabs for ExpandableTabs — map filter keys to tab entries
   const filterTabs = useMemo(() =>
     FILTER_TABS.map((t) => {
-      if ("type" in t && t.type === "separator") return { type: "separator" as const }
+      if ("type" in t) return { type: "separator" as const }
       const count = sourceCounts?.[t.key]
       const showCount = count != null && t.key !== "all" && t.key !== "bookmarks" && t.key !== "dismissed"
       return {
@@ -51,14 +51,14 @@ export function Layout({ children, lastFetchedUtc, sourceCounts, showFilters = f
 
   // Find active tab index from URL
   const activeTabIndex = useMemo(() => {
-    const nonSepTabs = FILTER_TABS.filter((t) => !("type" in t && t.type === "separator"))
+    const nonSepTabs = FILTER_TABS.filter((t): t is Exclude<typeof t, { type: "separator" }> => !("type" in t))
     const idx = nonSepTabs.findIndex((t) => t.key === activeFilter)
     if (idx === -1) return 0
     // Account for separators when mapping to the full array index
     let realIdx = 0
     let count = 0
     for (const t of FILTER_TABS) {
-      if ("type" in t && t.type === "separator") { realIdx++; continue }
+      if ("type" in t) { realIdx++; continue }
       if (count === idx) return realIdx
       count++
       realIdx++
@@ -87,7 +87,7 @@ export function Layout({ children, lastFetchedUtc, sourceCounts, showFilters = f
           borderColor: "var(--ink)",
         }}
       >
-        <div className="max-w-[1400px] mx-auto w-full px-6 md:px-10 lg:px-16 pt-4 pb-1">
+        <div className="max-w-[1800px] mx-auto w-full px-4 md:px-8 pt-4 pb-1">
           <div
             className="flex items-center justify-between flex-wrap gap-2 pb-2"
             style={{ borderBottom: "1px solid var(--rule)" }}
@@ -105,56 +105,40 @@ export function Layout({ children, lastFetchedUtc, sourceCounts, showFilters = f
               <Link to="/" className="no-underline" style={{ color: "inherit" }}>The AI Intelligence</Link>
             </h1>
 
-            {/* Right: nav + controls */}
-            <div className="flex items-center gap-3 min-w-[120px] justify-end" style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem" }}>
-              <Link to="/" style={{ color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}>Home</Link>
-              <Link to="/admin" style={{ color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}>Admin</Link>
-
-              {/* Theme toggle */}
-              <button
-                onClick={toggleTheme}
-                title="Toggle dark/light mode"
-                className="w-7 h-7 flex items-center justify-center rounded-full cursor-pointer"
-                style={{ border: "1px solid var(--rule)", color: "var(--ink-light)", fontSize: "0.9rem", background: "none", transition: "background 0.15s, color 0.15s" }}
-              >
-                {dark ? "\u2600" : "\u263E"}
-              </button>
-
-              {/* Settings dropdown */}
-              <div className="relative">
-                <button
-                  onClick={(e) => { e.stopPropagation(); setSettingsOpen((o) => !o) }}
-                  title="Settings"
-                  className="w-7 h-7 flex items-center justify-center rounded-full cursor-pointer"
-                  style={{ border: "1px solid var(--rule)", color: "var(--ink-light)", fontSize: "0.9rem", background: "none" }}
-                >
-                  &#9881;
-                </button>
-                {settingsOpen && (
-                  <div
-                    className="absolute right-0 top-[110%] rounded-md p-2.5 z-50 min-w-[140px]"
-                    style={{ background: "var(--cream)", border: "1px solid var(--rule)", boxShadow: "0 4px 12px rgba(0,0,0,0.1)" }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem", color: "var(--ink-muted)" }}>Font size</span>
-                      <button onClick={dec} className="px-1.5 py-0.5 rounded-sm cursor-pointer" style={{ border: "1px solid var(--rule)", color: "var(--ink-light)", fontFamily: "var(--font-sans)", fontSize: "0.7rem", fontWeight: 700, background: "none" }}>A&minus;</button>
-                      <button onClick={inc} className="px-1.5 py-0.5 rounded-sm cursor-pointer" style={{ border: "1px solid var(--rule)", color: "var(--ink-light)", fontFamily: "var(--font-sans)", fontSize: "0.7rem", fontWeight: 700, background: "none" }}>A+</button>
-                    </div>
-                    <span style={{ fontSize: "0.65rem", color: "var(--ink-muted)", letterSpacing: "0.05em" }}>v0.2.0</span>
-                  </div>
-                )}
-              </div>
-            </div>
+            {/* Right: edition date placeholder for balance */}
+            <div className="min-w-[120px]" />
           </div>
 
-          {/* Filter nav — Expandable Tabs */}
+          {/* Filter nav with integrated controls */}
           {showFilters && (
-            <nav className="py-3">
+            <nav className="py-2">
               <ExpandableTabs
                 tabs={filterTabs}
                 activeIndex={activeTabIndex}
                 onChange={handleTabChange}
+                rightContent={
+                  <div className="flex items-center gap-3 shrink-0 pr-1" style={{ fontFamily: "var(--font-sans)", fontSize: "0.75rem" }}>
+                    <Link to="/" style={{ color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}>Home</Link>
+                    <Link to="/admin" style={{ color: "var(--accent)", fontWeight: 600, textDecoration: "none" }}>Admin</Link>
+
+                    <div className="flex items-center gap-1" style={{ color: "var(--ink-muted)" }}>
+                      <button onClick={dec} title="Decrease font" className="cursor-pointer" style={{ width: "1.4rem", height: "1.4rem", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--rule)", background: "none", color: "var(--ink-light)", fontFamily: "var(--font-serif)", fontSize: "0.7rem", fontWeight: 700 }}>-</button>
+                      <span style={{ fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>A</span>
+                      <button onClick={inc} title="Increase font" className="cursor-pointer" style={{ width: "1.4rem", height: "1.4rem", display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid var(--rule)", background: "none", color: "var(--ink-light)", fontFamily: "var(--font-serif)", fontSize: "0.7rem", fontWeight: 700 }}>+</button>
+                    </div>
+
+                    <button
+                      onClick={toggleTheme}
+                      title="Toggle dark/light mode"
+                      className="w-6 h-6 flex items-center justify-center rounded-full cursor-pointer"
+                      style={{ border: "1px solid var(--rule)", color: "var(--ink-light)", fontSize: "0.85rem", background: "none", transition: "background 0.15s, color 0.15s" }}
+                    >
+                      {dark ? "\u2600" : "\u263E"}
+                    </button>
+
+                    {version && <span style={{ fontSize: "0.6rem", color: "var(--ink-muted)", letterSpacing: "0.04em" }}>v{version}</span>}
+                  </div>
+                }
               />
             </nav>
           )}
@@ -162,7 +146,7 @@ export function Layout({ children, lastFetchedUtc, sourceCounts, showFilters = f
       </header>
 
       {/* Main content */}
-      <main className="flex-1 max-w-[1400px] mx-auto w-full px-6 md:px-10 lg:px-16 py-6">
+      <main className="flex-1 max-w-[1800px] mx-auto w-full px-4 md:px-8 py-4">
         {children}
       </main>
 

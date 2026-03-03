@@ -96,7 +96,7 @@ export function AdminPage() {
 
   if (loading && !data) {
     return (
-      <Layout>
+      <Layout showFilters>
         <div className="text-center py-16" style={{ color: "var(--ink-muted)" }}>Loading...</div>
       </Layout>
     )
@@ -104,14 +104,14 @@ export function AdminPage() {
 
   if (!data) {
     return (
-      <Layout>
+      <Layout showFilters>
         <div className="text-center py-16" style={{ color: "var(--accent)" }}>Failed to load admin data.</div>
       </Layout>
     )
   }
 
   return (
-    <Layout>
+    <Layout showFilters>
       <div className="max-w-[960px] mx-auto" style={{ padding: "1.5rem", paddingBottom: "4rem" }}>
         <h2
           style={{
