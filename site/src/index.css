@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* shadcn semantic color tokens — mapped to newspaper palette */
+@theme inline {
+  --color-background: var(--cream);
+  --color-foreground: var(--ink);
+  --color-primary: var(--accent);
+  --color-muted: var(--cream-dark);
+  --color-muted-foreground: var(--ink-muted);
+  --color-border: var(--rule);
+}
+
 /* Newspaper theme — CSS custom properties */
 :root {
   --article-font-size: 16px;

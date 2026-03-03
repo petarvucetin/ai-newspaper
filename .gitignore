@@ -10,3 +10,5 @@ venv/
 .DS_Store
 intent.md
 plan.md
+site/dist/
+site/node_modules/
