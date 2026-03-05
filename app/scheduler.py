@@ -71,6 +71,10 @@ async def _run_fetch_inner() -> dict:
     source_map: dict[str, tuple[int, float]] = {
         row["name"]: (row["id"], row["weight"]) for row in sources_rows
     }
+    # Also map by identifier so channel articles (source_name=@handle) resolve correctly
+    for row in sources_rows:
+        if row["identifier"] and row["identifier"] not in source_map:
+            source_map[row["identifier"]] = (row["id"], row["weight"])
 
     # Run all three fetchers concurrently with per-fetcher progress
     fetch_state.add("Fetching HackerNews, Reddit, YouTube in parallel…")
