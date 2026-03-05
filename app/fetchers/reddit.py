@@ -33,7 +33,11 @@ async def _get_with_retry(client: httpx.AsyncClient, url: str, params: dict, ret
 
 async def fetch_reddit() -> list[RawArticle]:
     reddit_cfg = config.get("sources.reddit", {})
-    subreddits = reddit_cfg.get("subreddits", [])
+
+    # Get enabled subreddits from database only
+    from app.database import get_reddit_sources
+    subreddits = [row["identifier"] for row in get_reddit_sources() if row["enabled"]]
+
     post_limit = min(reddit_cfg.get("post_limit", 25), 100)
     time_filter = reddit_cfg.get("time_filter", "day")
 

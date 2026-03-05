@@ -10,37 +10,20 @@ admin:
   password: "changeme"  # Change this!
 
 sources:
+  # All sources (Reddit, YouTube, HackerNews) are now managed via the Admin interface
+  # Static source lists have been moved to the database for dynamic management
+
   reddit:
-    subreddits:
-      - r/ClaudeAI
-      - r/artificial
-      - r/MachineLearning
-      - r/LocalLLaMA
-      - r/ChatGPT
-      - r/programming
     post_limit: 25
     time_filter: "day"  # hour, day, week, month, year, all
 
   youtube:
-    # Channels are now managed via the admin interface (database)
-    # Previously pinned channels should be enabled in Admin > YouTube Channels
-
     channel_video_limit: 5      # Latest N videos to fetch per channel
     channel_days_back: 7        # How many days back to look for channel videos
-
-    # Keyword search — for discovering new channels and trending content
-    keywords:
-      - "claude code tutorial"
-      - "anthropic claude"
-      - "claude mcp"
     max_results: 10
     published_after_days: 2  # Only fetch videos published in last N days
 
   hackernews:
-    keywords:
-      - "claude code"
-      - "anthropic"
-      - "claude mcp"
     hits_per_page: 20
     days_back: 2
 

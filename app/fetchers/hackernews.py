@@ -11,7 +11,14 @@ ALGOLIA_URL = "https://hn.algolia.com/api/v1/search"
 
 async def fetch_hackernews() -> list[RawArticle]:
     hn_cfg = config.get("sources.hackernews", {})
-    keywords = hn_cfg.get("keywords", [])
+
+    # Get enabled keywords from database only
+    from app.database import get_sources, db_conn
+    with db_conn() as con:
+        rows = con.execute(
+            "SELECT identifier FROM sources WHERE source_type = 'hackernews' AND enabled = 1 AND COALESCE(blocked, 0) = 0"
+        ).fetchall()
+    keywords = [row["identifier"] for row in rows]
     hits_per_page = hn_cfg.get("hits_per_page", 20)
     days_back = hn_cfg.get("days_back", 2)
 
