@@ -17,6 +17,10 @@ def _cookies_file() -> str | None:
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+_CHANNEL_DELAY = 5        # seconds between channel fetches
+_MAX_429_RETRIES = 3      # retry attempts on HTTP 429
+
+
 def _parse_upload_date(upload_date: str | None) -> datetime:
     if upload_date:
         try:
@@ -44,39 +48,74 @@ def _build_article(entry: dict, source_name: str) -> RawArticle | None:
     )
 
 
+def validate_channel_handle(handle: str) -> bool:
+    """Check if a YouTube channel handle exists via a lightweight HEAD request."""
+    import httpx
+    handle = handle.lstrip("@")
+    url = f"https://www.youtube.com/@{handle}"
+    try:
+        resp = httpx.head(url, follow_redirects=True, timeout=10,
+                          headers={"User-Agent": "Mozilla/5.0"})
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Fetch pinned channels
 # ---------------------------------------------------------------------------
 
 def _fetch_channels_sync(channels: list[str], limit: int, cutoff: datetime) -> list[RawArticle]:
-    """Fetch latest videos from each pinned channel via yt-dlp."""
+    """Fetch latest videos from each channel via yt-dlp with rate limiting."""
+    import time
     import yt_dlp
+    from app.fetch_state import state as fetch_state
 
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": True,
-        "skip_download": True,
-        "ignoreerrors": True,
-        "playlistend": limit,
-        "extractor_args": {"youtubetab": {"skip": ["authcheck"]}},
-    }
     cookies = _cookies_file()
-    if cookies:
-        ydl_opts["cookiefile"] = cookies
-        logger.debug("YouTube channels: using cookies file")
-
     results: list[RawArticle] = []
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        for handle in channels:
-            handle = handle.lstrip("@")
-            url = f"https://www.youtube.com/@{handle}/videos"
-            source_name = f"@{handle}"
+    succeeded = 0
+    failures: list[str] = []
+
+    for idx, handle in enumerate(channels):
+        handle = handle.lstrip("@")
+        source_name = f"@{handle}"
+        url = f"https://www.youtube.com/@{handle}/videos"
+
+        # Rate limit: delay between channels
+        if idx > 0:
+            time.sleep(_CHANNEL_DELAY)
+
+        logger.info("YouTube channels: fetching @%s (%d/%d)", handle, idx + 1, len(channels))
+        fetch_state.add(f"YouTube: fetching @{handle} ({idx + 1}/{len(channels)})")
+
+        # Validate handle before trying yt-dlp
+        if not validate_channel_handle(handle):
+            failures.append(f"@{handle}: handle not found")
+            logger.warning("YouTube channels: @%s — handle not found, skipping", handle)
+            continue
+
+        ydl_opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "extract_flat": True,
+            "skip_download": True,
+            "ignoreerrors": True,
+            "playlistend": limit,
+            "extractor_args": {"youtubetab": {"skip": ["authcheck"]}},
+        }
+        if cookies:
+            ydl_opts["cookiefile"] = cookies
+
+        fetched = False
+        for attempt in range(1, _MAX_429_RETRIES + 1):
             try:
-                info = ydl.extract_info(url, download=False)
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
                 if not info:
-                    continue
+                    failures.append(f"@{handle}: no data returned")
+                    break
                 entries = info.get("entries") or []
+                count = 0
                 for entry in entries[:limit]:
                     if not entry:
                         continue
@@ -86,10 +125,33 @@ def _fetch_channels_sync(channels: list[str], limit: int, cutoff: datetime) -> l
                     article = _build_article(entry, source_name)
                     if article:
                         results.append(article)
+                        count += 1
+                logger.info("YouTube channels: @%s — %d videos", handle, count)
+                succeeded += 1
+                fetched = True
+                break
             except Exception as e:
-                logger.error("Channel fetch failed for @%s: %s", handle, e)
+                msg = str(e)
+                if "429" in msg or "Too Many Requests" in msg:
+                    wait = min(10 * (2 ** (attempt - 1)), 60)
+                    logger.warning("YouTube 429 for @%s (attempt %d/%d) — waiting %ds",
+                                   handle, attempt, _MAX_429_RETRIES, wait)
+                    if attempt < _MAX_429_RETRIES:
+                        time.sleep(wait)
+                    else:
+                        failures.append(f"@{handle}: 429 after {_MAX_429_RETRIES} retries")
+                else:
+                    failures.append(f"@{handle}: {msg[:80]}")
+                    break
 
-    logger.info("YouTube channels: %d videos from %d channels", len(results), len(channels))
+    failed = len(channels) - succeeded
+    logger.info("YouTube channels: %d/%d succeeded, %d failed, %d videos total",
+                succeeded, len(channels), failed, len(results))
+    fetch_state.add(f"YouTube channels: {succeeded}/{len(channels)} fetched, {len(results)} videos")
+    if failures:
+        logger.warning("YouTube channel failures: %s", "; ".join(failures[:10]))
+        fetch_state.add(f"Channel errors: {'; '.join(failures[:5])}")
+
     return results
 
 

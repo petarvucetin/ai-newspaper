@@ -141,7 +141,13 @@ async def update_schedule(
 
 @router.post("/admin/channel/add")
 async def add_channel(channel: str = Form(...), _: str = Depends(require_admin)):
-    handle = channel.strip()
+    handle = channel.strip().lstrip("@")
+    # Validate the channel handle exists on YouTube
+    from app.fetchers.youtube import validate_channel_handle
+    import asyncio
+    valid = await asyncio.to_thread(validate_channel_handle, handle)
+    if not valid:
+        return {"ok": False, "error": f"Channel @{handle} not found on YouTube"}
     added = add_youtube_channel(handle)
     return {"ok": True, "added": added}
 
