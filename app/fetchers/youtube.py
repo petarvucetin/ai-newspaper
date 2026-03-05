@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from app.fetchers.base import RawArticle
@@ -8,24 +9,34 @@ from app import config
 logger = logging.getLogger(__name__)
 
 _COOKIES_PATH = Path(__file__).parent.parent.parent / "youtube_cookies.txt"
+_YT_API_BASE = "https://www.googleapis.com/youtube/v3"
 
 def _cookies_file() -> str | None:
     return str(_COOKIES_PATH) if _COOKIES_PATH.exists() else None
+
+def _youtube_api_key() -> str:
+    return os.getenv("YOUTUBE_API_KEY", "")
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-_CHANNEL_DELAY = 5        # seconds between channel fetches
-_MAX_429_RETRIES = 3      # retry attempts on HTTP 429
-
-
 def _parse_upload_date(upload_date: str | None) -> datetime:
     if upload_date:
         try:
             return datetime.strptime(upload_date, "%Y%m%d").replace(tzinfo=timezone.utc)
         except ValueError:
+            pass
+    return datetime.now(timezone.utc)
+
+
+def _parse_iso_date(iso_str: str | None) -> datetime:
+    """Parse ISO 8601 datetime from YouTube Data API."""
+    if iso_str:
+        try:
+            return datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
             pass
     return datetime.now(timezone.utc)
 
@@ -49,12 +60,24 @@ def _build_article(entry: dict, source_name: str) -> RawArticle | None:
 
 
 def validate_channel_handle(handle: str) -> bool:
-    """Check if a YouTube channel handle exists via a lightweight HEAD request."""
-    import httpx
+    """Check if a YouTube channel handle exists via the Data API or HEAD request."""
     handle = handle.lstrip("@")
-    url = f"https://www.youtube.com/@{handle}"
+    api_key = _youtube_api_key()
+    if api_key:
+        import httpx
+        try:
+            resp = httpx.get(f"{_YT_API_BASE}/channels", params={
+                "forHandle": handle, "part": "id", "key": api_key,
+            }, timeout=10)
+            data = resp.json()
+            return len(data.get("items", [])) > 0
+        except Exception:
+            pass
+    # Fallback: HEAD request
+    import httpx
     try:
-        resp = httpx.head(url, follow_redirects=True, timeout=10,
+        resp = httpx.head(f"https://www.youtube.com/@{handle}",
+                          follow_redirects=True, timeout=10,
                           headers={"User-Agent": "Mozilla/5.0"})
         return resp.status_code == 200
     except Exception:
@@ -62,11 +85,114 @@ def validate_channel_handle(handle: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Fetch pinned channels
+# Fetch channels via YouTube Data API v3
 # ---------------------------------------------------------------------------
 
-def _fetch_channels_sync(channels: list[str], limit: int, cutoff: datetime) -> list[RawArticle]:
-    """Fetch latest videos from each channel via yt-dlp with rate limiting."""
+def _resolve_channel_id(client, handle: str, api_key: str) -> str | None:
+    """Resolve @handle to a YouTube channel ID via Data API."""
+    try:
+        resp = client.get(f"{_YT_API_BASE}/channels", params={
+            "forHandle": handle, "part": "contentDetails", "key": api_key,
+        })
+        data = resp.json()
+        items = data.get("items", [])
+        if not items:
+            return None
+        return items[0].get("contentDetails", {}).get("relatedPlaylists", {}).get("uploads")
+    except Exception as e:
+        logger.debug("Failed to resolve channel @%s: %s", handle, e)
+        return None
+
+
+def _fetch_playlist_videos(client, playlist_id: str, api_key: str, limit: int) -> list[dict]:
+    """Fetch video metadata from an uploads playlist."""
+    try:
+        resp = client.get(f"{_YT_API_BASE}/playlistItems", params={
+            "playlistId": playlist_id,
+            "part": "snippet",
+            "maxResults": min(limit, 50),
+            "key": api_key,
+        })
+        data = resp.json()
+        return data.get("items", [])
+    except Exception as e:
+        logger.debug("Failed to fetch playlist %s: %s", playlist_id, e)
+        return []
+
+
+def _fetch_channels_api(channels: list[str], limit: int, cutoff: datetime) -> list[RawArticle]:
+    """Fetch latest videos from channels using YouTube Data API v3."""
+    import httpx
+    from app.fetch_state import state as fetch_state
+
+    api_key = _youtube_api_key()
+    results: list[RawArticle] = []
+    succeeded = 0
+    failures: list[str] = []
+
+    with httpx.Client(timeout=15) as client:
+        for idx, handle in enumerate(channels):
+            handle = handle.lstrip("@")
+            source_name = f"@{handle}"
+
+            logger.info("YouTube API: fetching @%s (%d/%d)", handle, idx + 1, len(channels))
+            if idx % 10 == 0 or idx == len(channels) - 1:
+                fetch_state.add(f"YouTube API: fetching channels ({idx + 1}/{len(channels)})")
+
+            # Step 1: Resolve handle → uploads playlist ID
+            uploads_id = _resolve_channel_id(client, handle, api_key)
+            if not uploads_id:
+                failures.append(f"@{handle}: not found")
+                logger.warning("YouTube API: @%s — channel not found", handle)
+                continue
+
+            # Step 2: Fetch recent videos from uploads playlist
+            items = _fetch_playlist_videos(client, uploads_id, api_key, limit)
+            count = 0
+            for item in items:
+                snippet = item.get("snippet", {})
+                vid_id = snippet.get("resourceId", {}).get("videoId", "")
+                title = (snippet.get("title") or "").strip()
+                if not vid_id or not title:
+                    continue
+                # Skip non-video items (e.g. "Private video", "Deleted video")
+                if title in ("Private video", "Deleted video"):
+                    continue
+
+                published_at = _parse_iso_date(snippet.get("publishedAt"))
+                if published_at < cutoff:
+                    continue
+
+                article = RawArticle(
+                    source_name=source_name,
+                    external_id=vid_id,
+                    title=title,
+                    url=f"https://www.youtube.com/watch?v={vid_id}",
+                    author=snippet.get("videoOwnerChannelTitle") or snippet.get("channelTitle") or "",
+                    published_at=published_at,
+                    thumbnail_url="",
+                    upvotes=0,  # Data API playlistItems doesn't include view counts
+                    summary="",
+                )
+                results.append(article)
+                count += 1
+
+            logger.info("YouTube API: @%s — %d videos", handle, count)
+            succeeded += 1
+
+    failed = len(channels) - succeeded
+    logger.info("YouTube API: %d/%d succeeded, %d failed, %d videos total",
+                succeeded, len(channels), failed, len(results))
+    fetch_state.add(f"YouTube channels: {succeeded}/{len(channels)} fetched, {len(results)} videos")
+    if failures:
+        logger.warning("YouTube API channel failures: %s", "; ".join(failures[:10]))
+        fetch_state.add(f"Channel errors: {'; '.join(failures[:5])}")
+
+    return results
+
+
+def _fetch_channels_yt_dlp(channels: list[str], limit: int, cutoff: datetime) -> list[RawArticle]:
+    """Fallback: fetch channels via yt-dlp scraping (used when no API key)."""
     import time
     import yt_dlp
     from app.fetch_state import state as fetch_state
@@ -81,78 +207,59 @@ def _fetch_channels_sync(channels: list[str], limit: int, cutoff: datetime) -> l
         source_name = f"@{handle}"
         url = f"https://www.youtube.com/@{handle}/videos"
 
-        # Rate limit: delay between channels
         if idx > 0:
-            time.sleep(_CHANNEL_DELAY)
+            time.sleep(5)  # Rate limit for scraping
 
-        logger.info("YouTube channels: fetching @%s (%d/%d)", handle, idx + 1, len(channels))
-        fetch_state.add(f"YouTube: fetching @{handle} ({idx + 1}/{len(channels)})")
-
-        # Validate handle before trying yt-dlp
-        if not validate_channel_handle(handle):
-            failures.append(f"@{handle}: handle not found")
-            logger.warning("YouTube channels: @%s — handle not found, skipping", handle)
-            continue
+        logger.info("YouTube yt-dlp: fetching @%s (%d/%d)", handle, idx + 1, len(channels))
+        if idx % 5 == 0:
+            fetch_state.add(f"YouTube yt-dlp: fetching channels ({idx + 1}/{len(channels)})")
 
         ydl_opts = {
-            "quiet": True,
-            "no_warnings": True,
-            "extract_flat": True,
-            "skip_download": True,
-            "ignoreerrors": True,
-            "playlistend": limit,
+            "quiet": True, "no_warnings": True,
+            "extract_flat": True, "skip_download": True,
+            "ignoreerrors": True, "playlistend": limit,
             "extractor_args": {"youtubetab": {"skip": ["authcheck"]}},
         }
         if cookies:
             ydl_opts["cookiefile"] = cookies
 
-        fetched = False
-        for attempt in range(1, _MAX_429_RETRIES + 1):
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                if not info:
-                    failures.append(f"@{handle}: no data returned")
-                    break
-                entries = info.get("entries") or []
-                count = 0
-                for entry in entries[:limit]:
-                    if not entry:
-                        continue
-                    published_at = _parse_upload_date(entry.get("upload_date"))
-                    if published_at < cutoff:
-                        continue
-                    article = _build_article(entry, source_name)
-                    if article:
-                        results.append(article)
-                        count += 1
-                logger.info("YouTube channels: @%s — %d videos", handle, count)
-                succeeded += 1
-                fetched = True
-                break
-            except Exception as e:
-                msg = str(e)
-                if "429" in msg or "Too Many Requests" in msg:
-                    wait = min(10 * (2 ** (attempt - 1)), 60)
-                    logger.warning("YouTube 429 for @%s (attempt %d/%d) — waiting %ds",
-                                   handle, attempt, _MAX_429_RETRIES, wait)
-                    if attempt < _MAX_429_RETRIES:
-                        time.sleep(wait)
-                    else:
-                        failures.append(f"@{handle}: 429 after {_MAX_429_RETRIES} retries")
-                else:
-                    failures.append(f"@{handle}: {msg[:80]}")
-                    break
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            if not info:
+                failures.append(f"@{handle}: no data")
+                continue
+            entries = info.get("entries") or []
+            count = 0
+            for entry in entries[:limit]:
+                if not entry:
+                    continue
+                published_at = _parse_upload_date(entry.get("upload_date"))
+                if published_at < cutoff:
+                    continue
+                article = _build_article(entry, source_name)
+                if article:
+                    results.append(article)
+                    count += 1
+            succeeded += 1
+        except Exception as e:
+            failures.append(f"@{handle}: {str(e)[:80]}")
 
-    failed = len(channels) - succeeded
-    logger.info("YouTube channels: %d/%d succeeded, %d failed, %d videos total",
-                succeeded, len(channels), failed, len(results))
     fetch_state.add(f"YouTube channels: {succeeded}/{len(channels)} fetched, {len(results)} videos")
     if failures:
-        logger.warning("YouTube channel failures: %s", "; ".join(failures[:10]))
         fetch_state.add(f"Channel errors: {'; '.join(failures[:5])}")
-
     return results
+
+
+def _fetch_channels_sync(channels: list[str], limit: int, cutoff: datetime) -> list[RawArticle]:
+    """Fetch channel videos — uses YouTube Data API if key available, falls back to yt-dlp."""
+    api_key = _youtube_api_key()
+    if api_key:
+        logger.info("YouTube: using Data API v3 for %d channels", len(channels))
+        return _fetch_channels_api(channels, limit, cutoff)
+    else:
+        logger.info("YouTube: no API key, falling back to yt-dlp for %d channels", len(channels))
+        return _fetch_channels_yt_dlp(channels, limit, cutoff)
 
 
 # ---------------------------------------------------------------------------
