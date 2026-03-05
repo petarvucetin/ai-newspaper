@@ -46,27 +46,11 @@ def _get_transcript_api(video_id: str) -> str:
         return ""
 
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-
-        # Prefer manual English captions, then auto-generated
-        transcript = None
-        try:
-            transcript = transcript_list.find_manually_created_transcript(["en", "en-US", "en-GB"])
-        except Exception:
-            try:
-                transcript = transcript_list.find_generated_transcript(["en", "en-US", "en-GB"])
-            except Exception:
-                pass
-
-        if not transcript:
-            return ""
-
-        entries = transcript.fetch()
-        text = " ".join(entry.get("text", "") for entry in entries if entry.get("text"))
-        # Clean up whitespace
+        ytt = YouTubeTranscriptApi()
+        result = ytt.fetch(video_id, languages=["en", "en-US", "en-GB"])
+        text = " ".join(snippet.text for snippet in result if snippet.text)
         text = re.sub(r"\s+", " ", text).strip()
         return text
-
     except Exception as e:
         logger.debug("Transcript API failed for %s: %s", video_id, e)
         return ""
