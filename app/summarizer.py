@@ -1,6 +1,10 @@
 """
-Fetch YouTube transcript via yt-dlp and summarize with Claude Haiku.
+Fetch YouTube transcript and summarize with Claude Haiku.
 Called for each YouTube article during the fetch pipeline.
+
+Transcript sources (in priority order):
+1. youtube-transcript-api — fast, no cookies needed, handles auto-captions
+2. yt-dlp subtitle download — fallback if transcript API fails
 """
 import asyncio
 import logging
@@ -10,25 +14,62 @@ import tempfile
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()  # pick up .env whenever it exists, even if added after process start
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
 # Limit concurrent Anthropic API calls to avoid rate limits
 _ANTHROPIC_SEMAPHORE = asyncio.Semaphore(3)
 
-# Read lazily so adding .env and restarting the server picks it up
 def _api_key() -> str:
     return os.getenv("ANTHROPIC_API_KEY", "")
 
-# Optional cookies file to bypass YouTube IP blocks
 _COOKIES_PATH = Path(__file__).parent.parent / "youtube_cookies.txt"
 
 def _cookies_file() -> str | None:
     return str(_COOKIES_PATH) if _COOKIES_PATH.exists() else None
 
-# Max transcript chars sent to Claude (keeps token cost low — ~2k tokens)
+# Max transcript chars sent to Claude
 _TRANSCRIPT_CHAR_LIMIT = 8_000
+
+
+# ---------------------------------------------------------------------------
+# Transcript fetching
+# ---------------------------------------------------------------------------
+
+def _get_transcript_api(video_id: str) -> str:
+    """Fetch transcript via youtube-transcript-api (fast, no cookies needed)."""
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+    except ImportError:
+        logger.debug("youtube-transcript-api not installed, skipping")
+        return ""
+
+    try:
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+
+        # Prefer manual English captions, then auto-generated
+        transcript = None
+        try:
+            transcript = transcript_list.find_manually_created_transcript(["en", "en-US", "en-GB"])
+        except Exception:
+            try:
+                transcript = transcript_list.find_generated_transcript(["en", "en-US", "en-GB"])
+            except Exception:
+                pass
+
+        if not transcript:
+            return ""
+
+        entries = transcript.fetch()
+        text = " ".join(entry.get("text", "") for entry in entries if entry.get("text"))
+        # Clean up whitespace
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    except Exception as e:
+        logger.debug("Transcript API failed for %s: %s", video_id, e)
+        return ""
 
 
 def _parse_vtt(vtt: str) -> str:
@@ -37,12 +78,10 @@ def _parse_vtt(vtt: str) -> str:
     lines: list[str] = []
     for line in vtt.splitlines():
         line = line.strip()
-        # Skip header, timing cues, and empty lines
         if not line or line.startswith("WEBVTT") or line.startswith("Kind:") \
                 or line.startswith("Language:") or "-->" in line \
                 or re.match(r"^\d+$", line):
             continue
-        # Strip VTT inline tags: <00:00:01.234>, <c>, </c>, <b>, etc.
         line = re.sub(r"<[^>]+>", "", line).strip()
         if line and line not in seen:
             seen.add(line)
@@ -51,17 +90,12 @@ def _parse_vtt(vtt: str) -> str:
     return re.sub(r" {2,}", " ", text).strip()
 
 
-def _retry_sleep(n: int) -> float:
-    """Exponential backoff: 5s, 10s, 20s, 40s, 60s cap. Used when no Retry-After header."""
-    return min(5 * (2 ** n), 60)
-
-
-def _get_transcript_sync(video_id: str) -> str:
-    """Fetch auto-generated captions via yt-dlp. Returns plain text or ''."""
-    import time
-    import yt_dlp
-
-    MAX_ATTEMPTS = 4
+def _get_transcript_ytdlp(video_id: str) -> str:
+    """Fallback: fetch captions via yt-dlp."""
+    try:
+        import yt_dlp
+    except ImportError:
+        return ""
 
     with tempfile.TemporaryDirectory() as tmpdir:
         ydl_opts = {
@@ -75,57 +109,41 @@ def _get_transcript_sync(video_id: str) -> str:
             "outtmpl": os.path.join(tmpdir, "%(id)s.%(ext)s"),
             "ignoreerrors": True,
             "ignore_no_formats_error": True,
-            # yt-dlp built-in retry for fragment/http errors
-            "retries": MAX_ATTEMPTS,
-            "fragment_retries": MAX_ATTEMPTS,
-            "retry_sleep_functions": {
-                "http": _retry_sleep,
-                "fragment": _retry_sleep,
-            },
         }
         cookies = _cookies_file()
         if cookies:
             ydl_opts["cookiefile"] = cookies
-            logger.debug("Using cookies file for transcript fetch")
 
-        for attempt in range(1, MAX_ATTEMPTS + 1):
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
-                break  # success
-            except Exception as e:
-                msg = str(e)
-                if "429" in msg or "Too Many Requests" in msg:
-                    # Try to parse Retry-After from the exception message
-                    retry_after = None
-                    import re as _re
-                    m = _re.search(r"[Rr]etry-?[Aa]fter[:\s]+(\d+)", msg)
-                    if m:
-                        retry_after = int(m.group(1))
-                    wait = retry_after if retry_after else _retry_sleep(attempt)
-                    logger.warning(
-                        "YouTube 429 for %s (attempt %d/%d) — waiting %ds (Retry-After=%s)",
-                        video_id, attempt, MAX_ATTEMPTS, wait, retry_after,
-                    )
-                    if attempt < MAX_ATTEMPTS:
-                        time.sleep(wait)
-                    else:
-                        logger.error("Transcript fetch failed after %d attempts: %s", MAX_ATTEMPTS, video_id)
-                else:
-                    logger.debug("yt-dlp download error for %s: %s", video_id, e)
-                    break
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([f"https://www.youtube.com/watch?v={video_id}"])
+        except Exception as e:
+            logger.debug("yt-dlp subtitle download error for %s: %s", video_id, e)
 
-        # Check for VTT file regardless of whether yt-dlp reported an error
         for fname in os.listdir(tmpdir):
             if fname.endswith(".vtt"):
                 try:
                     vtt = Path(tmpdir, fname).read_text(encoding="utf-8", errors="ignore")
                     return _parse_vtt(vtt)
-                except Exception as e:
-                    logger.debug("VTT parse error for %s: %s", video_id, e)
+                except Exception:
                     return ""
 
-    logger.debug("No subtitles found for %s", video_id)
+    return ""
+
+
+def _get_transcript_sync(video_id: str) -> str:
+    """Fetch transcript — tries youtube-transcript-api first, then yt-dlp fallback."""
+    # Primary: youtube-transcript-api (fast, reliable, no cookies)
+    text = _get_transcript_api(video_id)
+    if text:
+        return text
+
+    # Fallback: yt-dlp subtitle download
+    text = _get_transcript_ytdlp(video_id)
+    if text:
+        return text
+
+    logger.debug("No transcript found for %s", video_id)
     return ""
 
 
@@ -134,9 +152,13 @@ async def get_transcript(video_id: str) -> str:
     return await asyncio.to_thread(_get_transcript_sync, video_id)
 
 
+# ---------------------------------------------------------------------------
+# Summarization
+# ---------------------------------------------------------------------------
+
 async def summarize_transcript(title: str, transcript: str) -> str:
     """
-    Use Claude Haiku to produce a 2-3 sentence smart summary.
+    Use Claude Haiku to produce a smart summary.
     Falls back to a raw transcript excerpt if the API key is missing.
     """
     if not transcript:
@@ -190,7 +212,7 @@ async def summarize_transcript(title: str, transcript: str) -> str:
 
 async def fetch_transcript_and_summarize(video_id: str, title: str) -> str:
     """
-    High-level helper: fetch transcript → summarize → return summary string.
+    High-level helper: fetch transcript -> summarize -> return summary string.
     Returns '' if the video has no captions.
     """
     transcript = await get_transcript(video_id)
