@@ -186,13 +186,10 @@ async def fetch_youtube() -> list[RawArticle]:
 
     yt_cfg = config.get("sources.youtube", {})
 
-    # Get channels from both YAML config and database (enabled channels)
+    # Get enabled channels from database only (no static config channels)
     from app.database import get_youtube_channels
-    yaml_channels = yt_cfg.get("channels", [])
     db_channels = [row["identifier"] for row in get_youtube_channels() if row["enabled"]]
-
-    # Merge and deduplicate channel handles
-    channels = list(dict.fromkeys(yaml_channels + db_channels))
+    channels = db_channels
 
     channel_limit = yt_cfg.get("channel_video_limit", 5)
     channel_days_back = yt_cfg.get("channel_days_back", 7)

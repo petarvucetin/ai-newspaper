@@ -22,11 +22,9 @@ sources:
     time_filter: "day"  # hour, day, week, month, year, all
 
   youtube:
-    # Pinned channels — fetched directly regardless of keywords
-    channels:
-      - "@AnthropicAI"
-      - "@code4AI"
-      - "@AIExplained-official"
+    # Channels are now managed via the admin interface (database)
+    # Previously pinned channels should be enabled in Admin > YouTube Channels
+
     channel_video_limit: 5      # Latest N videos to fetch per channel
     channel_days_back: 7        # How many days back to look for channel videos
 
