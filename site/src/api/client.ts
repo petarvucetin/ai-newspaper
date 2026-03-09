@@ -88,8 +88,9 @@ export function unpinChannel(sourceId: number): Promise<void> {
   return request(`/admin/channel/${sourceId}/unpin`, { method: "POST" })
 }
 
-export function deleteChannel(sourceId: number): Promise<void> {
-  return request(`/admin/channel/${sourceId}/delete`, { method: "POST" })
+export async function deleteChannel(sourceId: number): Promise<void> {
+  await request(`/admin/channel/${sourceId}/delete`, { method: "POST" })
+  window.dispatchEvent(new Event("articles-invalidated"))
 }
 
 export function addSubreddit(name: string): Promise<void> {
@@ -106,8 +107,9 @@ export function toggleReddit(sourceId: number): Promise<void> {
   return request(`/admin/reddit/${sourceId}/toggle`, { method: "POST" })
 }
 
-export function deleteReddit(sourceId: number): Promise<void> {
-  return request(`/admin/reddit/${sourceId}/delete`, { method: "POST" })
+export async function deleteReddit(sourceId: number): Promise<void> {
+  await request(`/admin/reddit/${sourceId}/delete`, { method: "POST" })
+  window.dispatchEvent(new Event("articles-invalidated"))
 }
 
 export function addSource(name: string, sourceType: string, identifier: string, weight: number): Promise<void> {
@@ -127,8 +129,9 @@ export function toggleSource(sourceId: number): Promise<void> {
   return request(`/admin/source/${sourceId}/toggle`, { method: "POST" })
 }
 
-export function deleteSource(sourceId: number): Promise<void> {
-  return request(`/admin/source/${sourceId}/delete`, { method: "POST" })
+export async function deleteSource(sourceId: number): Promise<void> {
+  await request(`/admin/source/${sourceId}/delete`, { method: "POST" })
+  window.dispatchEvent(new Event("articles-invalidated"))
 }
 
 export function addKeyword(keyword: string, weight: number): Promise<void> {

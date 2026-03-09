@@ -108,6 +108,25 @@ def init_db() -> None:
         con.execute(
             "CREATE INDEX IF NOT EXISTS idx_comments_article ON article_comments(article_id)"
         )
+        # Clean up orphaned articles (source deleted or blocked)
+        con.execute("""
+            DELETE FROM ratings WHERE article_id IN (
+                SELECT a.id FROM articles a LEFT JOIN sources s ON a.source_id = s.id
+                WHERE s.id IS NULL OR COALESCE(s.blocked, 0) = 1
+            )
+        """)
+        con.execute("""
+            DELETE FROM article_comments WHERE article_id IN (
+                SELECT a.id FROM articles a LEFT JOIN sources s ON a.source_id = s.id
+                WHERE s.id IS NULL OR COALESCE(s.blocked, 0) = 1
+            )
+        """)
+        con.execute("""
+            DELETE FROM articles WHERE id IN (
+                SELECT a.id FROM articles a LEFT JOIN sources s ON a.source_id = s.id
+                WHERE s.id IS NULL OR COALESCE(s.blocked, 0) = 1
+            )
+        """)
     print(f"Database initialized at {DB_PATH}")
 
 
@@ -407,7 +426,22 @@ def add_source(name: str, source_type: str, identifier: str, weight: float = 1.0
         return cur.rowcount > 0
 
 
+def delete_articles_for_source(source_id: int) -> int:
+    """Delete all articles (and their ratings/comments) belonging to a source. Returns count deleted."""
+    with db_conn() as con:
+        article_ids = [row[0] for row in con.execute(
+            "SELECT id FROM articles WHERE source_id = ?", (source_id,)
+        ).fetchall()]
+        if article_ids:
+            placeholders = ",".join("?" * len(article_ids))
+            con.execute(f"DELETE FROM ratings WHERE article_id IN ({placeholders})", article_ids)
+            con.execute(f"DELETE FROM article_comments WHERE article_id IN ({placeholders})", article_ids)
+            con.execute(f"DELETE FROM articles WHERE source_id = ?", (source_id,))
+        return len(article_ids)
+
+
 def delete_source(source_id: int) -> None:
+    delete_articles_for_source(source_id)
     with db_conn() as con:
         con.execute("DELETE FROM sources WHERE id = ?", (source_id,))
 

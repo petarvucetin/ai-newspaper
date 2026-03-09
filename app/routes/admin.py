@@ -117,7 +117,9 @@ async def unpin_channel(source_id: int, _: str = Depends(require_admin)):
 
 @router.post("/admin/channel/{source_id}/delete")
 async def delete_channel(source_id: int, _: str = Depends(require_admin)):
-    """Block a channel permanently so it never reappears."""
+    """Block a channel permanently so it never reappears, and remove all its articles."""
+    from app.database import delete_articles_for_source
+    delete_articles_for_source(source_id)
     with db_conn() as con:
         con.execute(
             "UPDATE sources SET blocked = 1, enabled = 0 WHERE id = ? AND source_type = 'youtube_channel'",
@@ -168,7 +170,9 @@ async def toggle_reddit(source_id: int, _: str = Depends(require_admin)):
 
 @router.post("/admin/reddit/{source_id}/delete")
 async def delete_reddit(source_id: int, _: str = Depends(require_admin)):
-    """Block a subreddit permanently so it never reappears."""
+    """Block a subreddit permanently so it never reappears, and remove all its articles."""
+    from app.database import delete_articles_for_source
+    delete_articles_for_source(source_id)
     with db_conn() as con:
         con.execute(
             "UPDATE sources SET blocked = 1, enabled = 0 WHERE id = ? AND source_type = 'reddit'",

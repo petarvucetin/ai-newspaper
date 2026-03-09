@@ -22,5 +22,12 @@ export function useArticles(source: string) {
 
   useEffect(() => { load() }, [load])
 
+  // Reload when a source is deleted (event fired from admin actions)
+  useEffect(() => {
+    const handler = () => { load() }
+    window.addEventListener("articles-invalidated", handler)
+    return () => window.removeEventListener("articles-invalidated", handler)
+  }, [load])
+
   return { data, loading, error, reload: load }
 }
