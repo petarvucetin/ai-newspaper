@@ -1,0 +1,59 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+schedule:
+  fetch_time: "07:00"  # Daily fetch time (HH:MM, local time)
+
+admin:
+  username: "admin"
+  password: "changeme"  # Change this!
+
+sources:
+  # All sources (Reddit, YouTube, HackerNews) are now managed via the Admin interface
+  # Static source lists have been moved to the database for dynamic management
+
+  reddit:
+    post_limit: 25
+    time_filter: "day"  # hour, day, week, month, year, all
+
+  youtube:
+    channel_video_limit: 5      # Latest N videos to fetch per channel
+    channel_days_back: 7        # How many days back to look for channel videos
+    max_results: 10
+    published_after_days: 2  # Only fetch videos published in last N days
+
+  hackernews:
+    hits_per_page: 20
+    days_back: 2
+
+keyword_weights:
+  "claude code": 3.0
+  "mcp": 2.5
+  "anthropic": 2.0
+  "claude": 1.5
+  "agentic": 2.0
+  "llm": 1.2
+  "ai": 0.8
+  "machine learning": 1.0
+  "openai": 1.0
+  "gpt": 1.0
+  "gemini": 0.8
+  "local llm": 1.5
+  "fine tuning": 1.2
+  "rag": 1.5
+  "agent": 1.8
+
+scoring:
+  keyword_score_cap: 10.0
+  recency_multipliers:
+    under_24h: 1.5
+    under_48h: 1.2
+    older: 1.0
+  feedback:
+    source_weight_delta: 0.05
+    keyword_weight_delta: 0.025
+    source_weight_min: 0.1
+    source_weight_max: 3.0
+    keyword_weight_min: 0.1
+    keyword_weight_max: 5.0
