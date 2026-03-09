@@ -68,13 +68,13 @@ async def _run_fetch_inner() -> dict:
     logger.info("Starting fetch pipeline at %s", datetime.now(timezone.utc).isoformat())
 
     sources_rows = get_sources()
-    source_map: dict[str, tuple[int, float]] = {
-        row["name"]: (row["id"], row["weight"]) for row in sources_rows
+    source_map: dict[str, tuple[int, float, str]] = {
+        row["name"]: (row["id"], row["weight"], row["source_type"]) for row in sources_rows
     }
     # Also map by identifier so channel articles (source_name=@handle) resolve correctly
     for row in sources_rows:
         if row["identifier"] and row["identifier"] not in source_map:
-            source_map[row["identifier"]] = (row["id"], row["weight"])
+            source_map[row["identifier"]] = (row["id"], row["weight"], row["source_type"])
 
     # Run all three fetchers concurrently with per-fetcher progress
     fetch_state.add("Fetching HackerNews, Reddit, YouTube in parallel…")
@@ -122,6 +122,7 @@ async def _run_fetch_inner() -> dict:
 
     inserted = 0
     skipped = 0
+    filtered_channel = 0
 
     from app.database import upsert_article
     for article in all_articles:
@@ -130,13 +131,18 @@ async def _run_fetch_inner() -> dict:
             logger.warning("Unknown source name '%s', skipping", article.source_name)
             continue
 
-        source_id, source_weight = source_info
+        source_id, source_weight, source_type = source_info
         relevancy, display = score_article(
             article.title,
             article.published_at,
             article.upvotes,
             source_weight,
         )
+
+        # Skip channel videos that don't match any keywords
+        if source_type == "youtube_channel" and relevancy == 0:
+            filtered_channel += 1
+            continue
 
         ok = upsert_article(
             source_id=source_id,
@@ -210,9 +216,11 @@ async def _run_fetch_inner() -> dict:
     if purged:
         fetch_state.add(f"🗑 Purged {purged} dismissed articles older than 7 days")
 
+    if filtered_channel:
+        fetch_state.add(f"⚡ Filtered {filtered_channel} irrelevant channel video(s) (no keyword match)")
     fetch_state.finish(inserted, skipped, len(all_articles))
     fetch_state.add(f"✓ Done — {inserted} new, {skipped} skipped ({len(all_articles)} total)")
-    logger.info("Fetch complete: %d new, %d skipped", inserted, skipped)
+    logger.info("Fetch complete: %d new, %d skipped, %d channel-filtered", inserted, skipped, filtered_channel)
     return {"inserted": inserted, "skipped": skipped, "total": len(all_articles)}
 
 
