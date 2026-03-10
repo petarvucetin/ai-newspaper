@@ -252,8 +252,7 @@ def reschedule(app, fetch_time: str, enabled: bool) -> None:
     scheduler = app.state.scheduler
     hour, minute = map(int, fetch_time.split(":"))
     scheduler.reschedule_job("daily_fetch", trigger="cron", hour=hour, minute=minute)
-    job = scheduler.get_job("daily_fetch")
     if enabled:
-        job.resume()
+        scheduler.resume_job("daily_fetch")
     else:
-        job.pause()
+        scheduler.pause_job("daily_fetch")
