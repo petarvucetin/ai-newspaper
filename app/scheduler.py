@@ -236,7 +236,7 @@ def setup_scheduler(app):
     hour, minute = map(int, fetch_time.split(":"))
 
     scheduler = AsyncIOScheduler()
-    job = scheduler.add_job(run_fetch, "cron", hour=hour, minute=minute, id="daily_fetch")
+    job = scheduler.add_job(run_fetch, "cron", hour=hour, minute=minute, id="daily_fetch", misfire_grace_time=600)
     if not auto_enabled:
         job.pause()
     app.state.scheduler = scheduler
@@ -251,7 +251,7 @@ def reschedule(app, fetch_time: str, enabled: bool) -> None:
 
     scheduler = app.state.scheduler
     hour, minute = map(int, fetch_time.split(":"))
-    scheduler.reschedule_job("daily_fetch", trigger="cron", hour=hour, minute=minute)
+    scheduler.reschedule_job("daily_fetch", trigger="cron", hour=hour, minute=minute, misfire_grace_time=600)
     if enabled:
         scheduler.resume_job("daily_fetch")
     else:

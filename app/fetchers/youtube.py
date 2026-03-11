@@ -46,6 +46,13 @@ def _build_article(entry: dict, source_name: str) -> RawArticle | None:
     title = (entry.get("title") or "").strip()
     if not vid_id or not title:
         return None
+
+    # Skip videos shorter than 5 minutes (300 seconds)
+    duration = entry.get("duration")
+    if duration is not None and duration < 300:
+        logger.debug("Skipping short video %s: %d seconds", vid_id, duration)
+        return None
+
     return RawArticle(
         source_name=source_name,
         external_id=vid_id,
@@ -422,5 +429,11 @@ async def fetch_youtube() -> list[RawArticle]:
             else:
                 article.summary = summary or ""
 
-    logger.info("YouTube: %d articles ready", len(all_articles))
-    return all_articles
+    # Filter out articles without transcripts (empty summary indicates no transcript available)
+    filtered_articles = [a for a in all_articles if a.summary]
+    skipped = len(all_articles) - len(filtered_articles)
+    if skipped:
+        logger.info("YouTube: skipped %d videos without transcripts", skipped)
+
+    logger.info("YouTube: %d articles ready", len(filtered_articles))
+    return filtered_articles
