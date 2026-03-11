@@ -28,7 +28,9 @@ async def lifespan(app: FastAPI):
 
     scheduler = setup_scheduler(app)
     scheduler.start()
-    logger.info("Scheduler started. Daily fetch at %s", config.get("schedule.fetch_time"))
+    from app.database import get_setting
+    actual_fetch_time = get_setting("schedule.fetch_time", config.get("schedule.fetch_time", "07:00"))
+    logger.info("Scheduler started. Daily fetch at %s", actual_fetch_time)
 
     yield
 
